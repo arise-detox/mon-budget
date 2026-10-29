@@ -132,20 +132,29 @@ export function parseCredit(lines, today = new Date()) {
     const am = amounts(l.text);
     if (!dm || !am.length) continue;
     const date = toISO(dm, year);
-    const v = parseAmount(am[0][0]).value;
-    if (!date || date < todayISO || !(v > 0)) continue;
+    const vals = am.map(a => parseAmount(a[0]).value);
+    if (!date || date < todayISO || !(vals[0] > 0)) continue;
     if (schedule.some(s => s.date === date)) continue;
-    schedule.push({ date, amount: v });
+    const row = { date, amount: vals[0] };
+    // Tableau complet (échéance, capital, intérêts, capital restant dû) : le dernier montant est le capital restant dû.
+    if (vals.length >= 4 && vals[vals.length - 1] >= vals[0]) row.rest = vals[vals.length - 1];
+    schedule.push(row);
   }
   if (schedule.length < 2) schedule = [];     // une seule ligne : pas un tableau d'amortissement
 
-  let monthly = null, remaining = null, capital = null;
+  let monthly = null, remaining = null, capital = null, borrowed = null, totalDue = null, duration = null, rate = null;
   for (const l of lines) {
-    const am = amounts(l.text);
-    if (monthly === null && /(mensualit[ée]|montant de l.?[ée]ch[ée]ance|[ée]ch[ée]ance mensuelle)/i.test(l.text) && am.length) monthly = parseAmount(am[0][0]).value;
-    const r = l.text.match(/(\d{1,3})\s*(?:mensualit[ée]s?|[ée]ch[ée]ances?)\s*restantes?/i) || l.text.match(/(?:restantes?|reste)\s*:?\s*(\d{1,3})\s*(?:mois|mensualit|[ée]ch[ée]ance)/i);
+    const t = l.text, am = amounts(t);
+    if (monthly === null && /(mensualit[ée]|montant de l.?[ée]ch[ée]ance|[ée]ch[ée]ance mensuelle)/i.test(t) && am.length) monthly = parseAmount(am[0][0]).value;
+    const r = t.match(/(\d{1,3})\s*(?:mensualit[ée]s?|[ée]ch[ée]ances?)\s*restantes?/i) || t.match(/(?:restantes?|reste)\s*:?\s*(\d{1,3})\s*(?:mois|mensualit|[ée]ch[ée]ance)/i);
     if (remaining === null && r) remaining = Number(r[1]);
-    if (capital === null && /capital restant d[ûu]/i.test(l.text) && am.length) capital = parseAmount(am[am.length - 1][0]).value;
+    if (capital === null && /capital restant d[ûu]/i.test(t) && am.length) capital = parseAmount(am[am.length - 1][0]).value;
+    if (borrowed === null && /(montant (du (cr[ée]dit|pr[êe]t)|emprunt[ée]|financ[ée])|capital emprunt[ée])/i.test(t) && am.length) borrowed = parseAmount(am[0][0]).value;
+    if (totalDue === null && /(montant total (d[ûu]|[àa] rembourser)|total [àa] rembourser)/i.test(t) && am.length) totalDue = parseAmount(am[am.length - 1][0]).value;
+    const d = t.match(/dur[ée]e[^\d]{0,30}(\d{1,3})\s*mois/i);
+    if (duration === null && d) duration = Number(d[1]);
+    const tx = t.match(/taux\s+(?:d[ée]biteur|nominal|d.?int[ée]r[êe]ts?|fixe)[^\d]{0,25}(\d{1,2}(?:,\d{1,4})?)\s*%/i);
+    if (rate === null && tx) rate = Number(tx[1].replace(",", "."));
   }
   if (monthly === null && schedule.length) {            // échéance la plus fréquente du tableau
     const freq = {};
@@ -153,12 +162,40 @@ export function parseCredit(lines, today = new Date()) {
     monthly = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
   }
   if (remaining === null && schedule.length) remaining = schedule.length;
-  return { schedule, monthly, remaining, capital };
+  if (remaining === null && totalDue && monthly) remaining = Math.round(totalDue / monthly);
+  if (remaining === null && duration) remaining = duration;
+  return { schedule, monthly, remaining, capital: capital ?? borrowed, totalDue, duration, rate };
 }
 
 export function buildSchedule(monthly, months, firstDate) {
   const n = Math.min(480, Math.max(0, parseInt(months, 10) || 0));
   const out = [];
   for (let i = 0; i < n; i++) out.push({ date: addMonths(firstDate, i), amount: round(monthly) });
+  return out;
+}
+
+// ---------- Évolution du capital restant dû ----------
+// Taux mensuel qui relie capital, mensualité et durée (bisection). null = incohérent.
+export function solveRate(capital, monthly, n) {
+  if (!(capital > 0 && monthly > 0 && n > 0)) return null;
+  if (monthly * n <= capital * 1.0000001) return monthly * n < capital * 0.999 ? null : 0;
+  const f = i => monthly * (1 - Math.pow(1 + i, -n)) / i - capital;   // décroissante en i
+  let lo = 1e-9, hi = 0.01;
+  while (f(hi) > 0 && hi < 5) hi *= 2;
+  for (let k = 0; k < 100; k++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+// Capital restant dû après chaque échéance. rate = taux annuel en % (sinon déduit du capital, de la mensualité et de la durée).
+export function amortize({ capital, monthly, months, rate }) {
+  if (!(capital > 0) || !(monthly > 0) || !(months > 0)) return null;
+  const i = rate != null && rate >= 0 ? rate / 1200 : solveRate(capital, monthly, months);
+  const out = [];
+  let b = capital;
+  for (let k = 1; k <= months; k++) {
+    b = i === null ? capital * (months - k) / months : b * (1 + i) - monthly;   // sans taux exploitable : décroissance linéaire
+    out.push(round(Math.max(0, b)));
+  }
+  if (out[out.length - 1] < monthly) out[out.length - 1] = 0;
   return out;
 }

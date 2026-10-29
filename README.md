@@ -16,6 +16,17 @@ Petite application web pour suivre ses **dépenses**, ses **prélèvements à ve
 Ouvrir `index.html` dans un navigateur suffit pour la saisie manuelle. Aucune installation.
 Les données restent dans le `localStorage` de ton navigateur (rien n'est envoyé sur internet).
 
+## Prélèvements mémorisés et crédits
+
+La section **« Mes prélèvements et crédits »** garde les libellés et les montants :
+
+- **Ajouter** un prélèvement (libellé, montant, premier prélèvement, durée facultative) : il est reconduit automatiquement chaque mois (12 mois glissants) tant que tu ne le retires pas.
+- **Rendre récurrent** : le bouton 🔁 d'un prélèvement déjà saisi le mémorise et crée les mois suivants (l'historique passé n'est pas recréé).
+- **Modifier le montant** (✎) : seules les échéances à venir changent. **Retirer** (🗑) : les échéances à venir sont supprimées, l'historique est conservé.
+- Les libellés déjà utilisés sont proposés à la saisie.
+
+**Crédits** : à la lecture d'un contrat ou d'un tableau d'amortissement, l'app retient la mensualité, le capital restant dû, le taux et le nombre d'échéances. Chaque crédit affiche son **reste à rembourser** (somme des échéances à venir) et son **capital restant dû**, qui diminuent à chaque échéance ; chaque ligne du mois indique le reste à rembourser après le paiement. Si le PDF ne donne pas le capital mois par mois, il est estimé à partir du taux (ou déduit du capital, de la mensualité et de la durée).
+
 ## Import de PDF (relevé bancaire, crédit en cours)
 
 Le PDF est lu **localement dans le navigateur** (bibliothèque pdf.js, hébergée avec l'app) : il n'est jamais envoyé sur internet.

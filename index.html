@@ -92,14 +92,28 @@ li.rv.dup{opacity:.55}
       <option value="debit">Prélèvement à venir</option>
       <option value="income">Revenu</option>
     </select>
-    <input id="label" class="w2" placeholder="Libellé" required maxlength="80">
+    <input id="label" class="w2" placeholder="Libellé" required maxlength="80" list="labels">
+    <datalist id="labels"></datalist>
     <input id="amount" class="w2" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Montant €" required>
     <input id="date" class="w2" type="date" required>
     <input id="cat" class="w2" placeholder="Catégorie (optionnel)" list="cats" maxlength="30">
     <datalist id="cats"></datalist>
-    <input id="rep" class="w2" type="number" inputmode="numeric" min="1" max="60" step="1" placeholder="Répéter (mois)" title="Nombre de mois (laisser vide = 1 seule fois)">
-    <button class="primary w6" type="submit">Ajouter</button>
+    <button class="primary w2" type="submit">Ajouter</button>
   </form>
+</section>
+
+<section class="card" id="plans">
+  <strong>🔁 Mes prélèvements et crédits</strong>
+  <p class="foot" style="margin:4px 0 8px">Les libellés sont mémorisés : un prélèvement se reconduit chaque mois tant que tu ne le retires pas. Les crédits gardent leur reste à rembourser, qui diminue à chaque échéance.</p>
+  <form id="pform" autocomplete="off">
+    <input id="p-label" class="w3" placeholder="Libellé (ex. Netflix, Loyer)" required maxlength="80" list="labels">
+    <input id="p-amount" class="w3" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Montant mensuel €" required>
+    <input id="p-first" class="w3" type="date" required title="Premier prélèvement">
+    <input id="p-months" class="w3" type="number" inputmode="numeric" min="1" max="480" step="1" placeholder="Durée en mois (vide = sans fin)">
+    <button class="primary w6" type="submit">Mémoriser ce prélèvement</button>
+  </form>
+  <p id="plan-msg" class="foot" style="margin:8px 0 0" role="status"></p>
+  <ul id="plan-list"></ul>
 </section>
 
 <section class="card" id="imp">
@@ -117,6 +131,8 @@ li.rv.dup{opacity:.55}
     <input id="c-monthly" type="number" step="0.01" min="0.01" placeholder="Mensualité €" aria-label="Mensualité">
     <input id="c-months" type="number" step="1" min="1" max="480" placeholder="Mois restants" aria-label="Mois restants">
     <input id="c-first" type="date" aria-label="Prochaine échéance">
+    <input id="c-capital" type="number" step="0.01" min="0" placeholder="Capital restant dû €" aria-label="Capital restant dû">
+    <input id="c-rate" type="number" step="0.01" min="0" placeholder="Taux annuel % (option)" aria-label="Taux annuel">
     <button id="c-gen" type="button">Générer les échéances</button>
   </div>
   <div id="imp-review" hidden>
@@ -174,17 +190,27 @@ let saveTimer;
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items };
+    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [] };
   } catch {}
-  return { start: 0, items: [] };
+  return { start: 0, items: [], plans: [] };
 }
 // Index par mois : calculé une seule fois par modification, pas à chaque rendu.
-let byMonth = new Map(), nets = [];
+let byMonth = new Map(), nets = [], planById = new Map(), leftAfter = new Map();
 function reindex() {
   byMonth = new Map();
+  const byPlan = new Map();
   for (const it of state.items) {
     const m = it.date.slice(0, 7);
     (byMonth.get(m) || byMonth.set(m, []).get(m)).push(it);
+    if (it.plan) (byPlan.get(it.plan) || byPlan.set(it.plan, []).get(it.plan)).push(it);
+  }
+  planById = new Map(state.plans.map(p => [p.id, p]));
+  // Reste à rembourser après chaque échéance d'un plan = somme des échéances suivantes.
+  leftAfter = new Map();
+  for (const arr of byPlan.values()) {
+    arr.sort((a, b) => a.date.localeCompare(b.date));
+    let s = 0;
+    for (let i = arr.length - 1; i >= 0; i--) { leftAfter.set(arr[i].id, round(s)); s += arr[i].amount; }
   }
   nets = [...byMonth].map(([m, a]) => [m, a.reduce((s, i) => s + signed(i), 0)]).sort((x, y) => (x[0] < y[0] ? -1 : 1));
 }
@@ -211,6 +237,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 const round = n => Math.round(n * 100) / 100;
 const signed = it => (it.type === "income" ? 1 : -1) * it.amount;
 const cls = n => (n < 0 ? "neg" : "pos");
+const todayISO = () => { const t = new Date(); return ym(t) + "-" + String(t.getDate()).padStart(2, "0"); };
+const fmtDate = iso => iso.split("-").reverse().join("/");
 
 // ---------- Calculs ----------
 // Report = solde de départ + tout ce qui est daté avant le mois affiché
@@ -256,6 +284,10 @@ function render() {
 
   // suggestions de catégories
   $("cats").innerHTML = [...new Set(state.items.map(i => i.cat).filter(Boolean))].map(k => `<option value="${esc(k)}">`).join("");
+  // libellés mémorisés (prélèvements récurrents, crédits et prélèvements déjà saisis)
+  const labels = new Set([...state.plans.map(p => p.label), ...state.items.filter(i => i.type === "debit").map(i => i.label)]);
+  $("labels").innerHTML = [...labels].sort().map(k => `<option value="${esc(k)}">`).join("");
+  renderPlans();
 }
 
 function row(it) {
@@ -263,11 +295,17 @@ function row(it) {
   const color = it.type === "income" ? "pos" : it.type === "debit" && !it.paid ? "warn" : "neg";
   const badge = it.type === "debit" ? `<span class="badge ${it.paid ? "pos" : "warn"}">${it.paid ? "payé" : "à venir"}</span>` : "";
   const pay = it.type === "debit" ? `<button data-a="toggle" title="Marquer ${it.paid ? "à venir" : "payé"}">${it.paid ? "↩" : "✓"}</button>` : "";
+  const rec = it.type === "debit" && !it.plan ? `<button data-a="rec" title="Mémoriser et reconduire chaque mois" aria-label="Rendre récurrent">🔁</button>` : "";
+  const plan = it.plan && planById.get(it.plan);
+  let extra = "";
+  if (plan && plan.kind === "credit") {          // montant à rembourser, qui évolue d'un mois à l'autre
+    extra = ` · reste à rembourser : ${eur.format(leftAfter.get(it.id) || 0)}` + (it.rest != null ? ` (capital ${eur.format(it.rest)})` : "");
+  } else if (plan) extra = " · récurrent";
   return `<li data-id="${it.id}">
     <span>${esc(it.label)}${badge}</span>
     <span class="amt ${color}">${sign} ${eur.format(it.amount)}</span>
-    <span class="act">${pay}<button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
-    <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}</span>
+    <span class="act">${pay}${rec}<button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
+    <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}${extra}</span>
   </li>`;
 }
 
@@ -281,13 +319,9 @@ $("form").addEventListener("submit", e => {
   const amount = round(parseFloat($("amount").value));
   if (!(amount > 0)) return;
   const type = $("type").value, date = $("date").value;
-  const times = Math.min(60, Math.max(1, parseInt($("rep").value, 10) || 1));
   const label = $("label").value.trim(), cat = $("cat").value.trim();
-  for (let i = 0; i < times; i++) {
-    state.items.push({ id: uid(), type, label, amount, date: addMonths(date, i), cat, paid: type !== "debit" });
-  }
+  state.items.push({ id: uid(), type, label, amount, date, cat, paid: type !== "debit" });
   save();
-  $("rep").value = "";
   view = date.slice(0, 7);
   $("label").value = ""; $("amount").value = ""; $("label").focus();
   render();
@@ -299,8 +333,10 @@ $("list").addEventListener("click", e => {          // délégation : un seul li
   const id = btn.closest("li").dataset.id;
   const i = state.items.findIndex(x => x.id === id);
   if (i < 0) return;
+  const it = state.items[i];
   if (btn.dataset.a === "del") state.items.splice(i, 1);
-  else state.items[i].paid = !state.items[i].paid;
+  else if (btn.dataset.a === "rec") makeRecurring(it);
+  else it.paid = !it.paid;
   save(); render();
 });
 
@@ -325,16 +361,120 @@ $("import").addEventListener("change", async e => {
   try {
     const d = JSON.parse(await f.text());
     if (!Array.isArray(d.items)) throw 0;
-    state = { start: Number(d.start) || 0, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => ({ id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid })) };
+    const plans = (Array.isArray(d.plans) ? d.plans : []).filter(p => p && p.id && (p.kind === "debit" || p.kind === "credit") && p.label && p.amount > 0 && p.first)
+      .map(p => ({ id: String(p.id), kind: p.kind, label: String(p.label), amount: Number(p.amount), first: String(p.first), months: p.months > 0 ? Number(p.months) : null, k: Number(p.k) || 0, cat: String(p.cat || ""), capital: p.capital > 0 ? Number(p.capital) : null }));
+    state = { start: Number(d.start) || 0, plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
+      const o = { id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid };
+      if (i.plan) o.plan = String(i.plan);
+      if (i.rest != null && i.rest >= 0) o.rest = Number(i.rest);
+      return o;
+    }) };
     $("start").value = state.start; save(); render();
     view = ym(new Date());
   } catch { alert("Fichier invalide."); }
   e.target.value = "";
 });
 
+// ---------- Prélèvements récurrents & crédits ----------
+// Un « plan » mémorise le libellé et le montant. Les prélèvements sans fin sont reconduits
+// sur 12 mois glissants ; un crédit garde ses échéances et son reste à rembourser.
+const planMsg = t => { $("plan-msg").textContent = t; };
+
+function extendPlans() {
+  const today = todayISO(), horizon = addMonths(today, 12);
+  let added = 0;
+  for (const p of state.plans) {
+    if (p.kind !== "debit") continue;
+    while ((p.months == null || p.k < p.months) && addMonths(p.first, p.k) <= horizon) {
+      const date = addMonths(p.first, p.k++);
+      state.items.push({ id: uid(), type: "debit", label: p.label, amount: p.amount, date, cat: p.cat || "", paid: date < today, plan: p.id });
+      added++;
+    }
+  }
+  return added;
+}
+
+function makeRecurring(it) {
+  const p = { id: uid(), kind: "debit", label: it.label, amount: it.amount, first: it.date, months: null, k: 1, cat: it.cat || "" };
+  while (addMonths(p.first, p.k) < todayISO()) p.k++;      // on ne recrée pas l'historique passé
+  state.plans.push(p);
+  it.plan = p.id;
+  const n = extendPlans();
+  planMsg(`« ${p.label} » mémorisé : ${n} prélèvements ajoutés sur les 12 prochains mois.`);
+}
+
+function removePlan(id) {
+  const today = todayISO();
+  state.items = state.items.filter(i => !(i.plan === id && i.date > today));   // l'historique passé est conservé
+  for (const i of state.items) if (i.plan === id) delete i.plan;
+  state.plans = state.plans.filter(p => p.id !== id);
+}
+
+function creditInfo(p) {
+  const today = todayISO();
+  const its = state.items.filter(i => i.plan === p.id).sort((a, b) => a.date.localeCompare(b.date));
+  const future = its.filter(i => i.date > today), past = its.filter(i => i.date <= today);
+  const lastPast = past[past.length - 1];
+  return {
+    left: round(future.reduce((s, i) => s + i.amount, 0)), n: future.length, next: future[0]?.date,
+    end: its.length ? its[its.length - 1].date : null,
+    capital: lastPast ? (lastPast.rest ?? null) : (p.capital ?? null)
+  };
+}
+
+function renderPlans() {
+  $("plan-list").innerHTML = state.plans.length ? state.plans.map(p => {
+    if (p.kind === "credit") {
+      const c = creditInfo(p);
+      return `<li data-p="${p.id}"><span>${esc(p.label)}<span class="badge warn">crédit</span></span>
+        <span class="amt neg">${eur.format(p.amount)}/mois</span>
+        <span class="act"><button data-a="pdel" title="Retirer ce crédit" aria-label="Retirer">🗑</button></span>
+        <span class="meta">Reste à rembourser : <b>${eur.format(c.left)}</b>${c.capital != null ? ` · capital restant dû : ${eur.format(c.capital)}` : ""} · ${c.n} échéance${c.n > 1 ? "s" : ""}${c.end ? " · fin " + fmtDate(c.end).slice(3) : ""}</span></li>`;
+    }
+    const next = state.items.filter(i => i.plan === p.id && i.date >= todayISO()).map(i => i.date).sort()[0];
+    return `<li data-p="${p.id}"><span>${esc(p.label)}<span class="badge">${p.months ? p.months + " mois" : "sans fin"}</span></span>
+      <span class="amt warn">${eur.format(p.amount)}/mois</span>
+      <span class="act"><button data-a="pedit" title="Changer le montant" aria-label="Modifier">✎</button><button data-a="pdel" title="Retirer ce prélèvement" aria-label="Retirer">🗑</button></span>
+      <span class="meta">${next ? "Prochain : " + fmtDate(next) : "Aucune échéance à venir"}</span></li>`;
+  }).join("") : '<li class="empty">Aucun prélèvement mémorisé.</li>';
+}
+
+$("pform").addEventListener("submit", e => {
+  e.preventDefault();
+  const label = $("p-label").value.trim(), amount = round(parseFloat($("p-amount").value)), first = $("p-first").value;
+  const months = Math.min(480, parseInt($("p-months").value, 10) || 0) || null;
+  if (!label || !(amount > 0) || !first) return;
+  state.plans.push({ id: uid(), kind: "debit", label, amount, first, months, k: 0, cat: "" });
+  const n = extendPlans();
+  save();
+  view = first.slice(0, 7);
+  $("p-label").value = ""; $("p-amount").value = ""; $("p-months").value = "";
+  planMsg(`« ${label} » mémorisé : ${n} prélèvement${n > 1 ? "s" : ""} ajouté${n > 1 ? "s" : ""}${months ? "" : " (12 mois glissants, reconduits automatiquement)"}.`);
+  render();
+});
+
+$("plan-list").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-a]");
+  if (!btn) return;
+  const p = state.plans.find(x => x.id === btn.closest("li").dataset.p);
+  if (!p) return;
+  if (btn.dataset.a === "pdel") {
+    if (!confirm(`Retirer « ${p.label} » ? Les échéances à venir seront supprimées, l'historique passé est conservé.`)) return;
+    removePlan(p.id);
+    planMsg(`« ${p.label} » retiré.`);
+  } else if (btn.dataset.a === "pedit") {
+    const v = parseFloat(String(prompt(`Nouveau montant mensuel pour « ${p.label} » (€) :`, p.amount) || "").replace(",", "."));
+    if (!(v > 0)) return;
+    const today = todayISO();
+    p.amount = round(v);
+    for (const i of state.items) if (i.plan === p.id && i.date > today) i.amount = p.amount;
+    planMsg(`Montant de « ${p.label} » mis à jour pour les échéances à venir.`);
+  }
+  save(); render();
+});
+
 // ---------- Import PDF (relevé / crédit) ----------
 let pending = [], pendingKind = "statement", pdfMod = null;
-const todayISO = () => { const t = new Date(); return ym(t) + "-" + String(t.getDate()).padStart(2, "0"); };
 const impMsg = t => { $("imp-msg").textContent = t; };
 const isDup = r => state.items.some(i => i.date === r.date && Math.abs(i.amount - r.amount) < 0.005 && i.label.toLowerCase() === r.label.toLowerCase());
 
@@ -349,7 +489,8 @@ function renderReview() {
 }
 function setPending(rows, kind) {
   pendingKind = kind;
-  pending = rows.map(r => { const dup = isDup(r); return { ...r, dup, sel: !dup }; });
+  // Un crédit ré-importé remplace l'ancien (même nom) : pas de détection de doublon dans ce cas.
+  pending = rows.map(r => { const dup = kind !== "credit" && isDup(r); return { ...r, dup, sel: !dup }; });
   renderReview();
 }
 function nextDue(day) {                       // prochaine date à ce jour du mois, à partir d'aujourd'hui
@@ -391,10 +532,13 @@ $("imp-file").addEventListener("change", async e => {
       $("c-monthly").value = r.monthly || "";
       $("c-months").value = r.remaining || "";
       $("c-first").value = r.schedule[0]?.date || nextDue(new Date().getDate());
+      $("c-capital").value = r.capital || "";
+      $("c-rate").value = r.rate || "";
       if (r.schedule.length) {
         const label = $("c-label").value || "Crédit";
-        setPending(r.schedule.map(s => ({ date: s.date, label, amount: s.amount, type: "debit" })), kind);
-        impMsg(`${r.schedule.length} échéances à venir trouvées. Vérifie le montant, puis importe.`);
+        const rests = pdfMod.amortize({ capital: r.capital, monthly: r.monthly, months: r.schedule.length, rate: r.rate });
+        setPending(r.schedule.map((s, i) => ({ date: s.date, label, amount: s.amount, type: "debit", rest: s.rest ?? rests?.[i] })), kind);
+        impMsg(`${r.schedule.length} échéances à venir trouvées${r.capital ? ` (capital restant dû lu : ${eur.format(r.capital)})` : ""}. Vérifie, puis importe.`);
       } else if (r.monthly && r.remaining) {
         $("c-gen").click();
       } else {
@@ -413,9 +557,12 @@ $("c-gen").addEventListener("click", async () => {
   if (!(monthly > 0) || !first || !($("c-months").value > 0)) { impMsg("Renseigne mensualité, mois restants et prochaine échéance."); return; }
   pdfMod = pdfMod || await import("./pdf-import.js");
   const label = $("c-label").value.trim() || "Crédit";
-  const rows = pdfMod.buildSchedule(monthly, $("c-months").value, first).map(s => ({ ...s, label, type: "debit" }));
+  const base = pdfMod.buildSchedule(monthly, $("c-months").value, first);
+  const capital = parseFloat($("c-capital").value) || 0, rate = $("c-rate").value === "" ? null : parseFloat($("c-rate").value);
+  const rests = pdfMod.amortize({ capital, monthly, months: base.length, rate });
+  const rows = base.map((s, i) => ({ ...s, label, type: "debit", rest: rests?.[i] }));
   setPending(rows, "credit");
-  impMsg(`${rows.length} échéances générées : elles apparaîtront comme prélèvements à venir.`);
+  impMsg(`${rows.length} échéances générées` + (rests ? " : le capital restant dû est estimé mois par mois." : " : renseigne le capital restant dû pour suivre son évolution."));
 });
 
 $("imp-list").addEventListener("input", e => {
@@ -435,9 +582,21 @@ $("imp-go").addEventListener("click", () => {
   const today = todayISO();
   const rows = pending.filter(r => r.sel && r.amount > 0 && r.label.trim());
   if (!rows.length) { impMsg("Rien de coché à importer."); return; }
+  let planId;
+  if (pendingKind === "credit") {
+    const name = rows[0].label.trim();
+    const old = state.plans.find(p => p.kind === "credit" && p.label.toLowerCase() === name.toLowerCase());
+    if (old) removePlan(old.id);                                  // ré-import : remplace l'ancien crédit
+    const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+    const plan = { id: uid(), kind: "credit", label: name, amount: round(sorted[0].amount), first: sorted[0].date, months: rows.length, k: rows.length, cat: "Crédit", capital: parseFloat($("c-capital").value) > 0 ? parseFloat($("c-capital").value) : null };
+    state.plans.push(plan);
+    planId = plan.id;
+  }
   for (const r of rows) {
-    state.items.push({ id: uid(), type: r.type, label: r.label.trim(), amount: round(r.amount), date: r.date,
-      cat: pendingKind === "credit" ? "Crédit" : "", paid: r.type !== "debit" || r.date < today });
+    const o = { id: uid(), type: r.type, label: r.label.trim(), amount: round(r.amount), date: r.date,
+      cat: pendingKind === "credit" ? "Crédit" : "", paid: r.type !== "debit" || r.date < today };
+    if (planId) { o.plan = planId; if (r.rest != null) o.rest = r.rest; }
+    state.items.push(o);
   }
   save();
   view = rows.map(r => r.date).sort()[0].slice(0, 7);
@@ -445,7 +604,9 @@ $("imp-go").addEventListener("click", () => {
   impMsg(`${rows.length} lignes importées.` + (pendingKind === "statement" ? " Pense à régler le « solde de départ » : le solde du compte avant la 1ʳᵉ opération du relevé." : ""));
 });
 
-$("date").value = new Date().toISOString().slice(0, 10);
+$("date").value = todayISO();
+$("p-first").value = todayISO();
+if (extendPlans()) localStorage.setItem(KEY, JSON.stringify(state));   // reconduit les prélèvements récurrents
 reindex();
 render();
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
