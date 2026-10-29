@@ -1,6 +1,6 @@
 // Service worker minimal : l'app fonctionne hors-ligne après la première visite.
-const CACHE = "budget-v2";
-const FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg"];
+const CACHE = "budget-v3";
+const FILES = ["./", "index.html", "pdf-import.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

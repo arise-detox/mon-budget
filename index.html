@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; worker-src 'self' blob:; connect-src 'self'">
 <meta name="theme-color" content="#4f46e5">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -47,6 +47,14 @@ li .act button{padding:2px 8px}
 .foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;color:var(--muted);font-size:.85rem}
 label.file{cursor:pointer}
 .line{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;padding:2px 0}
+.btn{border:1px solid var(--line);border-radius:8px;padding:6px 12px;display:inline-block;background:var(--card);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+#imp .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+#imp-credit{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0}
+li.rv{grid-template-columns:auto 1fr 6.5em 7.5em;gap:6px 8px}
+li.rv .d{color:var(--muted);font-size:.8rem;white-space:nowrap}
+li.rv.dup{opacity:.55}
+@media(max-width:560px){li.rv{grid-template-columns:auto 1fr 6.5em}li.rv select{grid-column:2/4}}
 </style>
 </head>
 <body>
@@ -92,6 +100,32 @@ label.file{cursor:pointer}
     <input id="rep" class="w2" type="number" inputmode="numeric" min="1" max="60" step="1" placeholder="Répéter (mois)" title="Nombre de mois (laisser vide = 1 seule fois)">
     <button class="primary w6" type="submit">Ajouter</button>
   </form>
+</section>
+
+<section class="card" id="imp">
+  <strong>📄 Importer un PDF</strong>
+  <div class="row">
+    <select id="imp-kind" aria-label="Type de PDF">
+      <option value="statement">Relevé bancaire</option>
+      <option value="credit">Crédit en cours</option>
+    </select>
+    <label class="file"><input id="imp-file" type="file" accept="application/pdf" hidden><span class="btn">Choisir un PDF…</span></label>
+  </div>
+  <p id="imp-msg" class="foot" style="margin:0" role="status">Le PDF est lu sur ton appareil, il n'est jamais envoyé sur internet.</p>
+  <div id="imp-credit" hidden>
+    <input id="c-label" placeholder="Nom du crédit" maxlength="60" aria-label="Nom du crédit">
+    <input id="c-monthly" type="number" step="0.01" min="0.01" placeholder="Mensualité €" aria-label="Mensualité">
+    <input id="c-months" type="number" step="1" min="1" max="480" placeholder="Mois restants" aria-label="Mois restants">
+    <input id="c-first" type="date" aria-label="Prochaine échéance">
+    <button id="c-gen" type="button">Générer les échéances</button>
+  </div>
+  <div id="imp-review" hidden>
+    <ul id="imp-list"></ul>
+    <div class="row">
+      <button id="imp-all" type="button">Tout cocher / décocher</button>
+      <button id="imp-go" type="button" class="primary">Importer la sélection</button>
+    </div>
+  </div>
 </section>
 
 <section class="card">
@@ -296,6 +330,119 @@ $("import").addEventListener("change", async e => {
     view = ym(new Date());
   } catch { alert("Fichier invalide."); }
   e.target.value = "";
+});
+
+// ---------- Import PDF (relevé / crédit) ----------
+let pending = [], pendingKind = "statement", pdfMod = null;
+const todayISO = () => { const t = new Date(); return ym(t) + "-" + String(t.getDate()).padStart(2, "0"); };
+const impMsg = t => { $("imp-msg").textContent = t; };
+const isDup = r => state.items.some(i => i.date === r.date && Math.abs(i.amount - r.amount) < 0.005 && i.label.toLowerCase() === r.label.toLowerCase());
+
+function renderReview() {
+  $("imp-review").hidden = !pending.length;
+  $("imp-list").innerHTML = pending.map((r, i) => `<li class="rv${r.dup ? " dup" : ""}" data-i="${i}">
+    <label class="d"><input type="checkbox" data-k="sel"${r.sel ? " checked" : ""}> ${esc(r.date.split("-").reverse().join("/"))}${r.dup ? " · doublon" : ""}</label>
+    <input data-k="label" value="${esc(r.label)}" maxlength="80" aria-label="Libellé">
+    <input data-k="amount" type="number" step="0.01" min="0.01" value="${r.amount}" aria-label="Montant">
+    <select data-k="type" aria-label="Type">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}"${k === r.type ? " selected" : ""}>${v}</option>`).join("")}</select>
+  </li>`).join("");
+}
+function setPending(rows, kind) {
+  pendingKind = kind;
+  pending = rows.map(r => { const dup = isDup(r); return { ...r, dup, sel: !dup }; });
+  renderReview();
+}
+function nextDue(day) {                       // prochaine date à ce jour du mois, à partir d'aujourd'hui
+  const t = new Date(), iso = todayISO();
+  let d = ym(t) + "-" + String(Math.min(day, 28)).padStart(2, "0");
+  return d < iso ? shiftMonth(ym(t), 1) + "-" + String(Math.min(day, 28)).padStart(2, "0") : d;
+}
+
+$("imp-kind").addEventListener("change", () => {
+  $("imp-credit").hidden = $("imp-kind").value !== "credit";
+  pending = []; renderReview();
+  impMsg($("imp-kind").value === "credit"
+    ? "Choisis le PDF de ton crédit (tableau d'amortissement ou offre) : je repère la mensualité et les échéances à venir."
+    : "Choisis le PDF de ton relevé bancaire (téléchargé depuis ta banque, pas un scan).");
+});
+
+$("imp-file").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const kind = $("imp-kind").value;
+  impMsg("Lecture du PDF…");
+  try {
+    pdfMod = pdfMod || await import("./pdf-import.js");
+    let pdfjs;
+    try { pdfjs = await pdfMod.loadPdfjs(); }
+    catch { impMsg("Lecteur PDF introuvable. Ouvre l'app depuis GitHub Pages, ou lance « npm install && npm start » (voir README)."); return; }
+    const lines = await pdfMod.extractLines(pdfjs, new Uint8Array(await f.arrayBuffer()));
+    if (!lines.length) { impMsg("Aucun texte dans ce PDF : c'est sans doute un scan. Télécharge le PDF d'origine depuis ton espace bancaire."); return; }
+
+    if (kind === "statement") {
+      const rows = pdfMod.parseStatement(lines);
+      if (!rows.length) { impMsg("Aucune opération reconnue. Ce format de relevé n'est pas encore géré : ajoute les lignes à la main."); return; }
+      setPending(rows, kind);
+      impMsg(`${rows.length} opérations détectées. Vérifie les types (dépense / revenu), décoche ce que tu ne veux pas, puis importe.`);
+    } else {
+      const r = pdfMod.parseCredit(lines);
+      $("imp-credit").hidden = false;
+      $("c-label").value = f.name.replace(/\.pdf$/i, "").slice(0, 60);
+      $("c-monthly").value = r.monthly || "";
+      $("c-months").value = r.remaining || "";
+      $("c-first").value = r.schedule[0]?.date || nextDue(new Date().getDate());
+      if (r.schedule.length) {
+        const label = $("c-label").value || "Crédit";
+        setPending(r.schedule.map(s => ({ date: s.date, label, amount: s.amount, type: "debit" })), kind);
+        impMsg(`${r.schedule.length} échéances à venir trouvées. Vérifie le montant, puis importe.`);
+      } else if (r.monthly && r.remaining) {
+        $("c-gen").click();
+      } else {
+        pending = []; renderReview();
+        impMsg("Je n'ai pas trouvé toutes les infos. Complète mensualité, mois restants et prochaine échéance, puis « Générer ».");
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    impMsg("Impossible de lire ce PDF (protégé par mot de passe ou format inattendu).");
+  }
+});
+
+$("c-gen").addEventListener("click", async () => {
+  const monthly = parseFloat($("c-monthly").value), first = $("c-first").value;
+  if (!(monthly > 0) || !first || !($("c-months").value > 0)) { impMsg("Renseigne mensualité, mois restants et prochaine échéance."); return; }
+  pdfMod = pdfMod || await import("./pdf-import.js");
+  const label = $("c-label").value.trim() || "Crédit";
+  const rows = pdfMod.buildSchedule(monthly, $("c-months").value, first).map(s => ({ ...s, label, type: "debit" }));
+  setPending(rows, "credit");
+  impMsg(`${rows.length} échéances générées : elles apparaîtront comme prélèvements à venir.`);
+});
+
+$("imp-list").addEventListener("input", e => {
+  const k = e.target.dataset.k, li = e.target.closest("li");
+  if (!k || !li) return;
+  const r = pending[+li.dataset.i];
+  if (k === "sel") r.sel = e.target.checked;
+  else if (k === "amount") r.amount = round(parseFloat(e.target.value) || 0);
+  else r[k] = e.target.value;
+});
+$("imp-all").addEventListener("click", () => {
+  const all = pending.every(r => r.sel);
+  pending.forEach(r => { r.sel = !all; });
+  renderReview();
+});
+$("imp-go").addEventListener("click", () => {
+  const today = todayISO();
+  const rows = pending.filter(r => r.sel && r.amount > 0 && r.label.trim());
+  if (!rows.length) { impMsg("Rien de coché à importer."); return; }
+  for (const r of rows) {
+    state.items.push({ id: uid(), type: r.type, label: r.label.trim(), amount: round(r.amount), date: r.date,
+      cat: pendingKind === "credit" ? "Crédit" : "", paid: r.type !== "debit" || r.date < today });
+  }
+  save();
+  view = rows.map(r => r.date).sort()[0].slice(0, 7);
+  pending = []; renderReview(); render();
+  impMsg(`${rows.length} lignes importées.` + (pendingKind === "statement" ? " Pense à régler le « solde de départ » : le solde du compte avant la 1ʳᵉ opération du relevé." : ""));
 });
 
 $("date").value = new Date().toISOString().slice(0, 10);

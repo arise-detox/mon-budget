@@ -13,8 +13,25 @@ Petite application web pour suivre ses **dépenses**, ses **prélèvements à ve
 
 ## Utilisation
 
-Ouvrir `index.html` dans un navigateur. Aucune installation, aucune dépendance.
+Ouvrir `index.html` dans un navigateur suffit pour la saisie manuelle. Aucune installation.
 Les données restent dans le `localStorage` de ton navigateur (rien n'est envoyé sur internet).
+
+## Import de PDF (relevé bancaire, crédit en cours)
+
+Le PDF est lu **localement dans le navigateur** (bibliothèque pdf.js, hébergée avec l'app) : il n'est jamais envoyé sur internet.
+
+- **Relevé bancaire** : les opérations (date, libellé, montant) sont détectées, tu corriges le type (dépense / revenu), décoches ce que tu ne veux pas, puis importes. Les doublons sont décochés automatiquement. Règle ensuite le « solde de départ » (solde du compte avant la 1ʳᵉ opération du relevé).
+- **Crédit en cours** : un tableau d'amortissement ou une offre de prêt est analysé (mensualité, mois restants, échéances à venir). Les échéances deviennent des prélèvements à venir ; sinon, renseigne mensualité / mois restants / prochaine échéance et clique sur « Générer ».
+- Limites : il faut un PDF « texte » téléchargé depuis ta banque (un scan/photo ne marche pas), et la reconnaissance est heuristique : vérifie toujours le tableau avant d'importer.
+
+L'import PDF nécessite que l'app soit servie en http(s) (GitHub Pages, ou en local) :
+
+```bash
+npm install
+npm start        # copie pdf.js dans vendor/ puis sert l'app sur http://localhost:8080
+```
+
+Sur GitHub Pages, le workflow installe pdf.js (version figée dans `package.json`) automatiquement.
 
 ## Publier sur GitHub Pages
 

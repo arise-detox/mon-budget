@@ -18,7 +18,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir _site && cp index.html sw.js manifest.webmanifest icon.svg _site/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer et copier pdf.js (version figée dans package.json)
+        run: |
+          npm install --ignore-scripts
+          npm run vendor
+      - name: Préparer le site
+        run: |
+          mkdir _site
+          cp index.html pdf-import.js sw.js manifest.webmanifest icon.svg _site/
+          cp -r vendor _site/vendor
       - uses: actions/configure-pages@v5
         with:
           enablement: true

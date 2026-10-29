@@ -1,0 +1,13 @@
+{
+  "name": "mon-budget",
+  "private": true,
+  "version": "1.1.0",
+  "description": "Application de budget : dépenses, prélèvements à venir, report de solde, import PDF",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "start": "npm run vendor && python3 -m http.server 8080"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38"
+  }
+}
