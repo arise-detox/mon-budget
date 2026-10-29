@@ -61,3 +61,9 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - Un seul écouteur d'événements pour toute la liste (délégation)
 - Sauvegarde différée (une écriture `localStorage` par rafale d'actions)
 - Échappement HTML systématique, montants arrondis au centime
+
+## Utilisation simplifiée
+
+- En haut : le **solde actuel de ton compte** (✎ pour saisir celui de ta banque) ; le reste du mois (revenus, dépenses, prélèvements à venir, prévu fin de mois) en dessous.
+- Ajout en 3 champs : Dépense / Revenu / Prélèvement + libellé + montant + date ; « 🔁 Chaque mois » pour un salaire ou un prélèvement récurrent.
+- Récurrents, crédits, import PDF et sauvegarde sont repliés dans « Plus d'options ».
