@@ -67,3 +67,4 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - En haut : le **solde actuel de ton compte** (✎ pour saisir celui de ta banque) ; le reste du mois (revenus, dépenses, prélèvements à venir, prévu fin de mois) en dessous.
 - Ajout en 3 champs : Dépense / Revenu / Prélèvement + libellé + montant + date ; « 🔁 Chaque mois » pour un salaire ou un prélèvement récurrent.
 - Récurrents, crédits, import PDF et sauvegarde sont repliés dans « Plus d'options ».
+- **Modifier les dates et le nombre** : ✎ sur un récurrent (Plus d'options) change le montant, la prochaine date de prélèvement et le nombre de prélèvements restants (vide = sans fin) ; ✎ sur une ligne de la liste déplace ou corrige une seule échéance.

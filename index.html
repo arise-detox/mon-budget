@@ -73,6 +73,9 @@ li.rv.dup{opacity:.55}
 details.more{margin-bottom:12px}
 details.more>summary{cursor:pointer;list-style:none;text-align:center;color:var(--muted);padding:10px;border:1px dashed var(--line);border-radius:12px}
 details.more[open]>summary{margin-bottom:12px}
+li.ed{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));background:var(--bg);border-radius:8px;padding:10px;margin:2px 0}
+li.ed label{display:block}li.ed small{display:block;color:var(--muted);font-size:.75rem}li.ed input{width:100%}
+li.ed .btns{display:flex;gap:6px;align-items:end}
 @media(max-width:560px){li.rv{grid-template-columns:auto 1fr 6.5em}li.rv select{grid-column:2/4}}
 </style>
 </head>
@@ -196,6 +199,7 @@ const TYPES = { expense: "Dépense", debit: "Prélèvement", income: "Revenu" };
 
 // ---------- État & persistance ----------
 let state = load();
+let editItem = null, editPlan = null;
 let view = ym(new Date());
 let filter = "all";
 let saveTimer;
@@ -296,6 +300,24 @@ function render() {
   renderPlans();
 }
 
+function itemEditor(it) {
+  return `<li class="ed" data-id="${it.id}">
+    <label><small>Date</small><input id="ie-date" type="date" value="${it.date}"></label>
+    <label><small>Montant €</small><input id="ie-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${it.amount}"></label>
+    <span class="btns"><button data-a="isave" class="primary">Enregistrer</button><button data-a="icancel">Annuler</button></span>
+  </li>`;
+}
+function planEditor(p) {
+  const today = todayISO();
+  const fut = state.items.filter(i => i.plan === p.id && i.date >= today).map(i => i.date).sort();
+  const remaining = p.months == null ? "" : fut.length + Math.max(0, p.months - p.k);
+  return `<li class="ed" data-p="${p.id}">
+    <label><small>Montant mensuel €</small><input id="pe-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${p.amount}"></label>
+    <label><small>Prochaine date de prélèvement</small><input id="pe-date" type="date" value="${fut[0] || today}"></label>
+    <label><small>Nombre de prélèvements restants (vide = sans fin)</small><input id="pe-count" type="number" inputmode="numeric" min="1" max="480" step="1" value="${remaining}" placeholder="sans fin"></label>
+    <span class="btns"><button data-a="psave" class="primary">Enregistrer</button><button data-a="pcancel">Annuler</button></span>
+  </li>`;
+}
 function row(it) {
   const sign = it.type === "income" ? "+" : "−";
   const color = it.type === "income" ? "pos" : it.type === "debit" && !it.paid ? "warn" : "neg";
@@ -310,9 +332,9 @@ function row(it) {
   return `<li data-id="${it.id}">
     <span>${esc(it.label)}${badge}</span>
     <span class="amt ${color}">${sign} ${eur.format(it.amount)}</span>
-    <span class="act">${pay}${rec}<button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
+    <span class="act">${pay}${rec}<button data-a="edit" title="Changer la date ou le montant" aria-label="Modifier">✎</button><button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
     <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}${extra}</span>
-  </li>`;
+  </li>${editItem === it.id ? itemEditor(it) : ""}`;
 }
 
 // ---------- Événements ----------
@@ -363,6 +385,15 @@ $("list").addEventListener("click", e => {          // délégation : un seul li
   const i = state.items.findIndex(x => x.id === id);
   if (i < 0) return;
   const it = state.items[i];
+  if (btn.dataset.a === "edit") { editItem = editItem === id ? null : id; render(); return; }
+  if (btn.dataset.a === "icancel") { editItem = null; render(); return; }
+  if (btn.dataset.a === "isave") {
+    const date = $("ie-date").value, amount = round(parseFloat($("ie-amount").value));
+    if (!date || !(amount > 0)) return;
+    it.date = date; it.amount = amount; editItem = null; view = date.slice(0, 7);
+    if (it.plan) planMsg(`Échéance « ${it.label} » modifiée (cette échéance uniquement).`);
+    save(); render(); return;
+  }
   if (btn.dataset.a === "del") state.items.splice(i, 1);
   else if (btn.dataset.a === "rec") makeRecurring(it);
   else it.paid = !it.paid;
@@ -472,11 +503,12 @@ function renderPlans() {
         <span class="act"><button data-a="pdel" title="Retirer ce crédit" aria-label="Retirer">🗑</button></span>
         <span class="meta">Reste à rembourser : <b>${eur.format(c.left)}</b>${c.capital != null ? ` · capital restant dû : ${eur.format(c.capital)}` : ""} · ${c.n} échéance${c.n > 1 ? "s" : ""}${c.end ? " · fin " + fmtDate(c.end).slice(3) : ""}</span></li>`;
     }
-    const next = state.items.filter(i => i.plan === p.id && i.date >= todayISO()).map(i => i.date).sort()[0];
-    return `<li data-p="${p.id}"><span>${esc(p.label)}<span class="badge">${p.kind === "income" ? "revenu · " : ""}${p.months ? p.months + " mois" : "sans fin"}</span></span>
+    const futs = state.items.filter(i => i.plan === p.id && i.date >= todayISO()).map(i => i.date).sort(), next = futs[0];
+    const left = p.months == null ? null : futs.length + Math.max(0, p.months - p.k);
+    return `<li data-p="${p.id}"><span>${esc(p.label)}<span class="badge">${p.kind === "income" ? "revenu · " : ""}${left == null ? "sans fin" : left + " restant" + (left > 1 ? "s" : "")}</span></span>
       <span class="amt ${p.kind === "income" ? "pos" : "warn"}">${eur.format(p.amount)}/mois</span>
-      <span class="act"><button data-a="pedit" title="Changer le montant" aria-label="Modifier">✎</button><button data-a="pdel" title="Retirer ce prélèvement" aria-label="Retirer">🗑</button></span>
-      <span class="meta">${next ? "Prochain : " + fmtDate(next) : "Aucune échéance à venir"}</span></li>`;
+      <span class="act"><button data-a="pedit" title="Changer le montant, la date ou le nombre" aria-label="Modifier">✎</button><button data-a="pdel" title="Retirer ce prélèvement" aria-label="Retirer">🗑</button></span>
+      <span class="meta">${next ? "Prochain : " + fmtDate(next) : "Aucune échéance à venir"}</span></li>${editPlan === p.id ? planEditor(p) : ""}`;
   }).join("") : '<li class="empty">Aucun récurrent mémorisé.</li>';
 }
 
@@ -489,13 +521,19 @@ $("plan-list").addEventListener("click", e => {
     if (!confirm(`Retirer « ${p.label} » ? Les échéances à venir seront supprimées, l'historique passé est conservé.`)) return;
     removePlan(p.id);
     planMsg(`« ${p.label} » retiré.`);
-  } else if (btn.dataset.a === "pedit") {
-    const v = parseFloat(String(prompt(`Nouveau montant mensuel pour « ${p.label} » (€) :`, p.amount) || "").replace(",", "."));
-    if (!(v > 0)) return;
+  } else if (btn.dataset.a === "pedit") { editPlan = editPlan === p.id ? null : p.id; render(); return; }
+  else if (btn.dataset.a === "pcancel") { editPlan = null; render(); return; }
+  else if (btn.dataset.a === "psave") {
+    const amount = round(parseFloat($("pe-amount").value)), date = $("pe-date").value;
+    const cnt = Math.min(480, parseInt($("pe-count").value, 10) || 0) || null;
+    if (!(amount > 0) || !date) return;
     const today = todayISO();
-    p.amount = round(v);
-    for (const i of state.items) if (i.plan === p.id && i.date > today) i.amount = p.amount;
-    planMsg(`Montant de « ${p.label} » mis à jour pour les échéances à venir.`);
+    // Les échéances passées sont conservées ; les futures sont recréées avec la nouvelle date, le nouveau montant et le nombre restant.
+    state.items = state.items.filter(i => !(i.plan === p.id && i.date >= today));
+    Object.assign(p, { amount, first: date, k: 0, months: cnt });
+    const n = extendPlans();
+    editPlan = null; view = date.slice(0, 7);
+    planMsg(`« ${p.label} » modifié : ${n} échéance${n > 1 ? "s" : ""} planifiée${n > 1 ? "s" : ""}${cnt ? "" : " (12 mois glissants, reconduites automatiquement)"}.`);
   }
   save(); render();
 });
