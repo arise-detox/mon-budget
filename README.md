@@ -25,7 +25,11 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 
 ## Optimisations
 
-- Un seul fichier, zéro dépendance, aucun framework
+- Prélèvements/dépenses récurrents : champ « Répéter (mois) » (jusqu'à 60 mois, fin de mois gérée : 31 janvier → 28 février)
+- Application installable et utilisable **hors-ligne** (PWA : `manifest.webmanifest` + `sw.js`)
+- Politique de sécurité (CSP) stricte : aucune requête externe possible
+- Index par mois recalculé une seule fois par modification : le report ne reparcourt plus toutes les lignes à chaque affichage
+- Application en un fichier, zéro dépendance, aucun framework
 - Un seul écouteur d'événements pour toute la liste (délégation)
 - Sauvegarde différée (une écriture `localStorage` par rafale d'actions)
 - Échappement HTML systématique, montants arrondis au centime
