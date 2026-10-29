@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Mon Budget</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1c1f26;--muted:#6b7280;--line:#e5e7eb;--accent:#4f46e5;--pos:#059669;--neg:#dc2626;--warn:#d97706}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b22;--text:#e8eaf0;--muted:#9aa3b2;--line:#2a2f3a;--accent:#818cf8;--pos:#34d399;--neg:#f87171;--warn:#fbbf24}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:820px;margin:0 auto;padding:16px}
+h1{font-size:1.25rem;margin:0}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.nav{display:flex;align-items:center;gap:8px}
+.nav strong{min-width:9.5em;text-align:center;text-transform:capitalize}
+button,input,select{font:inherit;color:inherit}
+button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input,select{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi small{display:block;color:var(--muted);font-size:.78rem}
+.kpi b{font-size:1.2rem;font-variant-numeric:tabular-nums}
+.kpi.big b{font-size:1.5rem}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.warn{color:var(--warn)}
+form{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+form .w2{grid-column:span 2}form .w3{grid-column:span 3}form .w6{grid-column:span 6}
+@media(max-width:560px){form{grid-template-columns:1fr 1fr}form .w2,form .w3{grid-column:span 2}form .w6{grid-column:span 2}}
+.tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.tabs button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+ul{list-style:none;margin:0;padding:0}
+li{display:grid;grid-template-columns:1fr auto auto;gap:4px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li .meta{grid-column:1;color:var(--muted);font-size:.8rem}
+li .amt{grid-row:1/3;grid-column:2;font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+li .act{grid-row:1/3;grid-column:3;display:flex;gap:4px}
+li .act button{padding:2px 8px}
+.badge{font-size:.7rem;border:1px solid currentColor;border-radius:99px;padding:0 6px;margin-left:6px}
+.empty{color:var(--muted);text-align:center;padding:14px}
+.foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;color:var(--muted);font-size:.85rem}
+label.file{cursor:pointer}
+.line{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;padding:2px 0}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>💶 Mon Budget</h1>
+  <div class="nav">
+    <button id="prev" aria-label="Mois précédent">◀</button>
+    <strong id="month"></strong>
+    <button id="next" aria-label="Mois suivant">▶</button>
+    <button id="today" title="Revenir au mois en cours">Aujourd'hui</button>
+  </div>
+</header>
+
+<section class="card" aria-live="polite">
+  <div class="grid">
+    <div class="kpi"><small>Report du mois précédent</small><b id="k-open"></b></div>
+    <div class="kpi"><small>Revenus</small><b id="k-inc" class="pos"></b></div>
+    <div class="kpi"><small>Dépenses</small><b id="k-exp" class="neg"></b></div>
+    <div class="kpi"><small>Prélèvements à venir</small><b id="k-pend" class="warn"></b></div>
+  </div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+  <div class="grid">
+    <div class="kpi big"><small>Solde actuel</small><b id="k-now"></b></div>
+    <div class="kpi big"><small>Solde prévisionnel (fin de mois)</small><b id="k-end"></b></div>
+    <div class="kpi big"><small>Total prélèvements du mois</small><b id="k-deb"></b></div>
+  </div>
+  <p class="foot" style="margin:10px 0 0">Le solde prévisionnel est automatiquement reporté sur le mois suivant.</p>
+</section>
+
+<section class="card">
+  <form id="form" autocomplete="off">
+    <select id="type" class="w2" aria-label="Type">
+      <option value="expense">Dépense</option>
+      <option value="debit">Prélèvement à venir</option>
+      <option value="income">Revenu</option>
+    </select>
+    <input id="label" class="w2" placeholder="Libellé" required maxlength="80">
+    <input id="amount" class="w2" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Montant €" required>
+    <input id="date" class="w2" type="date" required>
+    <input id="cat" class="w2" placeholder="Catégorie (optionnel)" list="cats" maxlength="30">
+    <datalist id="cats"></datalist>
+    <button class="primary w2" type="submit">Ajouter</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="tabs" role="group" aria-label="Filtre">
+    <button data-f="all" aria-pressed="true">Tout</button>
+    <button data-f="expense" aria-pressed="false">Dépenses</button>
+    <button data-f="debit" aria-pressed="false">Prélèvements</button>
+    <button data-f="income" aria-pressed="false">Revenus</button>
+  </div>
+  <ul id="list"></ul>
+</section>
+
+<section class="card" id="cat-card" hidden>
+  <strong>Dépenses par catégorie</strong>
+  <div id="cat-list" style="margin-top:6px"></div>
+</section>
+
+<section class="card">
+  <div class="foot">
+    <label>Solde de départ (avant le 1er mois saisi) :
+      <input id="start" type="number" step="0.01" style="width:8em" value="0">
+    </label>
+    <span>
+      <button id="export">Exporter JSON</button>
+      <label class="file"><input id="import" type="file" accept="application/json" hidden><span class="btn" style="border:1px solid var(--line);border-radius:8px;padding:6px 12px;display:inline-block">Importer</span></label>
+    </span>
+  </div>
+</section>
+</main>
+
+<script>
+"use strict";
+const KEY = "budget-app-v1";
+const $ = id => document.getElementById(id);
+const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+const monthFmt = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
+const dayFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" });
+const TYPES = { expense: "Dépense", debit: "Prélèvement", income: "Revenu" };
+
+// ---------- État & persistance ----------
+let state = load();
+let view = ym(new Date());
+let filter = "all";
+let saveTimer;
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items };
+  } catch {}
+  return { start: 0, items: [] };
+}
+function save() {                       // sauvegarde différée : un seul write par rafale d'actions
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => localStorage.setItem(KEY, JSON.stringify(state)), 150);
+}
+window.addEventListener("pagehide", () => localStorage.setItem(KEY, JSON.stringify(state)));
+
+// ---------- Utilitaires ----------
+function ym(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function shiftMonth(m, n) { const [y, mo] = m.split("-").map(Number); return ym(new Date(y, mo - 1 + n, 1)); }
+function monthLabel(m) { const [y, mo] = m.split("-").map(Number); return monthFmt.format(new Date(y, mo - 1, 1)); }
+function uid() { return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2); }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const round = n => Math.round(n * 100) / 100;
+const signed = it => (it.type === "income" ? 1 : -1) * it.amount;
+const cls = n => (n < 0 ? "neg" : "pos");
+
+// ---------- Calculs ----------
+// Report = solde de départ + tout ce qui est daté avant le mois affiché
+// (prélèvements inclus, qu'ils soient payés ou non => solde prévisionnel).
+function compute(month) {
+  let opening = state.start, inc = 0, exp = 0, deb = 0, pend = 0;
+  for (const it of state.items) {
+    const m = it.date.slice(0, 7);
+    if (m < month) { opening += signed(it); continue; }
+    if (m > month) continue;
+    if (it.type === "income") inc += it.amount;
+    else if (it.type === "expense") exp += it.amount;
+    else { deb += it.amount; if (!it.paid) pend += it.amount; }
+  }
+  const now = opening + inc - exp - (deb - pend);
+  const end = opening + inc - exp - deb;
+  return { opening: round(opening), inc: round(inc), exp: round(exp), deb: round(deb), pend: round(pend), now: round(now), end: round(end) };
+}
+
+// ---------- Rendu ----------
+function render() {
+  $("month").textContent = monthLabel(view);
+  const c = compute(view);
+  const set = (id, v, colored) => { const e = $(id); e.textContent = eur.format(v); if (colored) e.className = cls(v); };
+  set("k-open", c.opening, true);
+  set("k-inc", c.inc); set("k-exp", c.exp); set("k-pend", c.pend); set("k-deb", c.deb);
+  set("k-now", c.now, true); set("k-end", c.end, true);
+  $("k-open").parentElement.classList.add("kpi");
+
+  const items = state.items
+    .filter(it => it.date.startsWith(view) && (filter === "all" || it.type === filter))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  $("list").innerHTML = items.length ? items.map(row).join("") : '<li class="empty">Aucune ligne ce mois-ci.</li>';
+
+  // catégories
+  const byCat = {};
+  for (const it of state.items) if (it.type !== "income" && it.date.startsWith(view)) {
+    const k = it.cat || "Sans catégorie"; byCat[k] = (byCat[k] || 0) + it.amount;
+  }
+  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  $("cat-card").hidden = !entries.length;
+  $("cat-list").innerHTML = entries.map(([k, v]) => `<div class="line"><span>${esc(k)}</span><b>${eur.format(round(v))}</b></div>`).join("");
+
+  // suggestions de catégories
+  $("cats").innerHTML = [...new Set(state.items.map(i => i.cat).filter(Boolean))].map(k => `<option value="${esc(k)}">`).join("");
+}
+
+function row(it) {
+  const sign = it.type === "income" ? "+" : "−";
+  const color = it.type === "income" ? "pos" : it.type === "debit" && !it.paid ? "warn" : "neg";
+  const badge = it.type === "debit" ? `<span class="badge ${it.paid ? "pos" : "warn"}">${it.paid ? "payé" : "à venir"}</span>` : "";
+  const pay = it.type === "debit" ? `<button data-a="toggle" title="Marquer ${it.paid ? "à venir" : "payé"}">${it.paid ? "↩" : "✓"}</button>` : "";
+  return `<li data-id="${it.id}">
+    <span>${esc(it.label)}${badge}</span>
+    <span class="amt ${color}">${sign} ${eur.format(it.amount)}</span>
+    <span class="act">${pay}<button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
+    <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}</span>
+  </li>`;
+}
+
+// ---------- Événements ----------
+$("prev").onclick = () => { view = shiftMonth(view, -1); render(); };
+$("next").onclick = () => { view = shiftMonth(view, 1); render(); };
+$("today").onclick = () => { view = ym(new Date()); render(); };
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const amount = round(parseFloat($("amount").value));
+  if (!(amount > 0)) return;
+  const type = $("type").value, date = $("date").value;
+  state.items.push({ id: uid(), type, label: $("label").value.trim(), amount, date, cat: $("cat").value.trim(), paid: type !== "debit" });
+  save();
+  view = date.slice(0, 7);
+  $("label").value = ""; $("amount").value = ""; $("label").focus();
+  render();
+});
+
+$("list").addEventListener("click", e => {          // délégation : un seul listener pour toute la liste
+  const btn = e.target.closest("button[data-a]");
+  if (!btn) return;
+  const id = btn.closest("li").dataset.id;
+  const i = state.items.findIndex(x => x.id === id);
+  if (i < 0) return;
+  if (btn.dataset.a === "del") state.items.splice(i, 1);
+  else state.items[i].paid = !state.items[i].paid;
+  save(); render();
+});
+
+document.querySelector(".tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-f]");
+  if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  render();
+});
+
+$("start").value = state.start;
+$("start").addEventListener("input", e => { state.start = parseFloat(e.target.value) || 0; save(); render(); });
+
+$("export").onclick = () => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+  Object.assign(document.createElement("a"), { href: url, download: `budget-${ym(new Date())}.json` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$("import").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.items)) throw 0;
+    state = { start: Number(d.start) || 0, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => ({ id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid })) };
+    $("start").value = state.start; save(); render();
+  } catch { alert("Fichier invalide."); }
+  e.target.value = "";
+});
+
+$("date").value = new Date().toISOString().slice(0, 10);
+render();
+</script>
+</body>
+</html>
