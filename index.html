@@ -78,11 +78,21 @@ details.more[open]>summary{margin-bottom:12px}
 li.ed{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));background:var(--bg);border-radius:8px;padding:10px;margin:2px 0}
 li.ed label{display:block}li.ed small{display:block;color:var(--muted);font-size:.75rem}li.ed input{width:100%}
 li.ed .btns{display:flex;gap:6px;align-items:end}
+#alert{margin:10px 0 0;padding:8px 10px;border-radius:8px;background:color-mix(in srgb,var(--neg) 12%,transparent);color:var(--neg);font-size:.9rem;text-align:left}
+#alert a{color:inherit;font-weight:700}
+#warn{margin-bottom:12px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--text);font-size:.88rem}
+#eq-chart{margin-top:6px}#eq-chart svg{width:100%;height:auto;display:block}
+.c-line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round}.c-zero{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 3;opacity:.7}.c-buf{stroke:var(--warn);stroke-width:1;stroke-dasharray:2 3}
+.c-t{fill:var(--muted);font-size:9px}
+#q{width:100%;margin-bottom:8px}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;display:flex;gap:12px;align-items:center;background:var(--text);color:var(--bg);padding:10px 14px;border-radius:99px;font-size:.9rem;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:92vw}
+#toast button{background:none;border:0;color:inherit;font-weight:700;text-decoration:underline;padding:0}
 @media(max-width:560px){li.rv{grid-template-columns:auto 1fr 6.5em}li.rv select{grid-column:2/4}}
 </style>
 </head>
 <body>
 <main>
+<div id="warn" hidden role="alert"></div>
 <header>
   <h1>💶 Mon Budget</h1>
   <div class="nav">
@@ -103,6 +113,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <button id="bal-no" type="button">Annuler</button>
   </div>
   <p class="foot" id="bal-hint" style="margin:8px 0 0;justify-content:center"></p>
+  <div id="alert" hidden></div>
   <div class="mini">
     <div class="kpi"><small>Revenus du mois</small><b id="k-inc" class="pos"></b></div>
     <div class="kpi"><small>Dépenses du mois</small><b id="k-exp" class="neg"></b></div>
@@ -122,6 +133,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <label><small>Marge de sécurité €</small><input id="eq-buf" type="number" inputmode="decimal" min="0" step="10" placeholder="0" aria-label="Marge de sécurité en euros"></label>
   </div>
   <div id="eq-out" aria-live="polite"></div>
+  <div id="eq-chart"></div>
 </section>
 
 <section class="card">
@@ -143,6 +155,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
 </section>
 
 <section class="card">
+  <input id="q" type="search" placeholder="🔍 Rechercher une ligne…" aria-label="Rechercher" autocomplete="off">
   <div class="tabs" role="group" aria-label="Filtre">
     <button data-f="all" aria-pressed="true">Tout</button>
     <button data-f="expense" aria-pressed="false">Dépenses</button>
@@ -191,8 +204,9 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
   </section>
 
   <section class="card">
+    <label class="chk" style="margin-bottom:8px"><input id="auto" type="checkbox"> Marquer automatiquement « payé » un prélèvement dont la date est passée</label>
     <div class="foot">
-      <span>Sauvegarde de vos données</span>
+      <span id="bk">Sauvegarde de vos données</span>
       <span>
         <button id="export">Exporter JSON</button>
         <label class="file"><input id="import" type="file" accept="application/json" hidden><span class="btn" style="border:1px solid var(--line);border-radius:8px;padding:6px 12px;display:inline-block">Importer</span></label>
@@ -200,6 +214,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     </div>
   </section>
 </details>
+<div id="toast" role="status" hidden><span id="toast-t"></span><button id="toast-u" type="button">Annuler</button></div>
 </main>
 
 <script>
@@ -222,9 +237,9 @@ function normEq(e) { return { h: [1, 3, 6, 12].includes(e && e.h) ? e.h : 1, buf
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [], eq: normEq(s.eq) };
+    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [], eq: normEq(s.eq), auto: s.auto !== false, lastBackup: typeof s.lastBackup === "string" ? s.lastBackup : null };
   } catch {}
-  return { start: 0, items: [], plans: [], eq: normEq() };
+  return { start: 0, items: [], plans: [], eq: normEq(), auto: true, lastBackup: null };
 }
 // Index par mois : calculé une seule fois par modification, pas à chaque rendu.
 let byMonth = new Map(), nets = [], planById = new Map(), leftAfter = new Map();
@@ -249,11 +264,40 @@ function reindex() {
 function save() {                       // sauvegarde différée : un seul write par rafale d'actions
   reindex();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => localStorage.setItem(KEY, JSON.stringify(state)), 150);
+  saveTimer = setTimeout(persist, 150);
 }
-window.addEventListener("pagehide", () => localStorage.setItem(KEY, JSON.stringify(state)));
+function persist() {                    // écriture protégée : navigation privée, stockage plein ou bloqué
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(KEY, JSON.stringify(state)); if (storageBad) { storageBad = false; showWarn(); } }
+  catch { if (!storageBad) { storageBad = true; showWarn(); } }
+}
+let storageBad = false;
+function showWarn() {
+  const w = $("warn");
+  w.hidden = !storageBad;
+  w.textContent = "⚠️ Impossible d'enregistrer sur cet appareil (navigation privée ou stockage plein) : exportez vos données dans « Plus d'options » avant de fermer.";
+}
+window.addEventListener("pagehide", persist);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persist(); else { if (autoPay()) { save(); } render(); } });
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch {}   // demande au navigateur de ne pas effacer les données
 
 // ---------- Utilitaires ----------
+function autoPay() {                    // un prélèvement dont la date est passée est considéré comme payé (sauf si vous l'avez remis « à venir »)
+  if (!state.auto) return 0;
+  const today = todayISO(); let n = 0;
+  for (const it of state.items) if (it.type === "debit" && !it.paid && !it.manual && it.date < today) { it.paid = true; n++; }
+  return n;
+}
+const norm = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+let toastT = null, undoFn = null;
+function toast(msg, undo) {
+  $("toast-t").textContent = msg; undoFn = undo || null;
+  $("toast-u").hidden = !undo; $("toast").hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { $("toast").hidden = true; undoFn = null; }, 7000);
+}
+$("toast-u").onclick = () => { const f = undoFn; undoFn = null; $("toast").hidden = true; if (f) f(); };
+const restore = snap => { state = JSON.parse(snap); state.eq = normEq(state.eq); save(); render(); };
+
 function ym(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
 function shiftMonth(m, n) { const [y, mo] = m.split("-").map(Number); return ym(new Date(y, mo - 1 + n, 1)); }
 function addMonths(dateStr, n) {         // garde le même jour, ramené à la fin du mois si besoin (31 → 30/28)
@@ -307,12 +351,13 @@ function equilibrium(h, buf) {
     const evs = dep > 0 ? events.concat([{ date: today, amt: dep }], first.map(d => ({ date: d, amt: dep }))) : events;
     evs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.amt - b.amt));      // le même jour, les sorties d'abord
     let bal = start, min = start, minDate = today, breach = bal < buf ? today : null;
+    const pts = [];
     for (const e of evs) {
-      bal += e.amt;
+      bal += e.amt; pts.push([e.date, bal]);
       if (bal < min) { min = bal; minDate = e.date; }
       if (breach == null && bal < buf) breach = e.date;
     }
-    return { min: round(min), minDate, breach, end: round(bal) };
+    return { min: round(min), minDate, breach, end: round(bal), pts };
   };
   const base = run(0), need = Math.max(0, round(buf - base.min));
   let monthly = 0;
@@ -322,6 +367,26 @@ function equilibrium(h, buf) {
     monthly = Math.ceil(hi * 100) / 100;
   }
   return { ...base, need, monthly, start, endISO, h };
+}
+function chartSvg(r, buf) {
+  const day = d => Date.parse(d + "T00:00") / 864e5, t0 = day(todayISO()), span = Math.max(1, day(r.endISO) - t0);
+  const pts = [[0, r.start], ...r.pts.map(p => [day(p[0]) - t0, p[1]])];
+  const vals = pts.map(p => p[1]).concat([0, buf]);
+  let lo = Math.min(...vals), hi = Math.max(...vals); if (hi - lo < 1) hi = lo + 1;
+  const W = 320, H = 100, L = 4, R = 4, T = 10, B = 16, x = d => L + d / span * (W - L - R), y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  let d = `M${x(0).toFixed(1)} ${y(pts[0][1]).toFixed(1)}`;
+  for (let k = 1; k < pts.length; k++) d += `H${x(pts[k][0]).toFixed(1)}V${y(pts[k][1]).toFixed(1)}`;
+  d += `H${x(span).toFixed(1)}`;
+  const mx = x(day(r.minDate) - t0), my = y(r.min), bad = r.min < buf;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution prévue du solde : point bas ${eur.format(r.min)}">
+    <line class="c-zero" x1="${L}" x2="${W - R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}"/>
+    ${buf > 0 ? `<line class="c-buf" x1="${L}" x2="${W - R}" y1="${y(buf).toFixed(1)}" y2="${y(buf).toFixed(1)}"/>` : ""}
+    <path class="c-line" d="${d}"/>
+    <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="3.5" fill="${bad ? "var(--neg)" : "var(--pos)"}"/>
+    <text class="c-t" x="${L}" y="${H - 3}">aujourd'hui</text>
+    <text class="c-t" x="${W - R}" y="${H - 3}" text-anchor="end">${fmtDate(r.endISO).slice(0, 5)}</text>
+    <text class="c-t" x="${Math.min(Math.max(mx, 30), W - 30).toFixed(1)}" y="${(my < H / 2 ? my + 13 : my - 6).toFixed(1)}" text-anchor="middle">${eur.format(r.min)}</text>
+  </svg>`;
 }
 function renderEq() {
   $("eq-h").value = String(state.eq.h);
@@ -339,6 +404,10 @@ function renderEq() {
       <p class="foot" style="justify-content:flex-start">Point bas : ${eur.format(r.min)}${r.minDate === todayISO() ? " (aujourd'hui)" : " le " + fmtDate(r.minDate)} · solde à la fin de la période : ${eur.format(r.end)}.</p>`;
   }
   $("eq-out").innerHTML = html;
+  $("eq-chart").innerHTML = chartSvg(r, state.eq.buf);
+  const al = $("alert");                                      // alerte visible en haut : manque à venir
+  al.hidden = !(r.need > 0 && state.items.length);
+  if (!al.hidden) al.innerHTML = `⚠️ Il manquera <b>${eur.format(r.need)}</b> ${r.breach === todayISO() ? "dès maintenant" : "avant le " + fmtDate(r.breach)} · <a href="#eq">voir l'équilibre</a>`;
 }
 $("eq-h").addEventListener("change", e => { state.eq.h = +e.target.value; save(); renderEq(); });
 $("eq-buf").addEventListener("input", e => { state.eq.buf = Math.max(0, round(parseFloat(e.target.value) || 0)); save(); renderEq(); });
@@ -361,8 +430,10 @@ function render() {
   $("bal-hint").textContent = !state.items.length && !state.start ? "Commencez par indiquer le solde de votre compte bancaire." : "";
 
   const monthItems = byMonth.get(view) || [];
+  const q = norm($("q").value.trim());
   const items = monthItems
     .filter(it => filter === "all" || it.type === filter)
+    .filter(it => !q || norm(it.label + " " + (it.cat || "")).includes(q))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   $("list").innerHTML = items.length ? items.map(row).join("") : '<li class="empty">Aucune ligne ce mois-ci.</li>';
@@ -372,10 +443,13 @@ function render() {
   $("labels").innerHTML = [...labels].sort().map(k => `<option value="${esc(k)}">`).join("");
   renderPlans();
   renderEq();
+  renderBackup();
+  $("auto").checked = state.auto;
 }
 
 function itemEditor(it) {
   return `<li class="ed" data-id="${it.id}">
+    <label><small>Libellé</small><input id="ie-label" maxlength="80" value="${esc(it.label)}"></label>
     <label><small>Date</small><input id="ie-date" type="date" value="${it.date}"></label>
     <label><small>Montant €</small><input id="ie-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${it.amount}"></label>
     <span class="btns"><button data-a="isave" class="primary">Enregistrer</button><button data-a="icancel">Annuler</button></span>
@@ -386,6 +460,7 @@ function planEditor(p) {
   const fut = state.items.filter(i => i.plan === p.id && i.date >= today).map(i => i.date).sort();
   const remaining = p.months == null ? "" : fut.length + Math.max(0, p.months - p.k);
   return `<li class="ed" data-p="${p.id}">
+    <label><small>Libellé</small><input id="pe-label" maxlength="80" value="${esc(p.label)}"></label>
     <label><small>Montant mensuel €</small><input id="pe-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${p.amount}"></label>
     <label><small>Prochaine date de prélèvement</small><input id="pe-date" type="date" value="${fut[0] || today}"></label>
     <label><small>Nombre de prélèvements restants (vide = sans fin)</small><input id="pe-count" type="number" inputmode="numeric" min="1" max="480" step="1" value="${remaining}" placeholder="sans fin"></label>
@@ -412,6 +487,7 @@ function row(it) {
 }
 
 // ---------- Événements ----------
+$("q").addEventListener("input", render);
 $("prev").onclick = () => { view = shiftMonth(view, -1); render(); };
 $("next").onclick = () => { view = shiftMonth(view, 1); render(); };
 $("today").onclick = () => { view = ym(new Date()); render(); };
@@ -464,13 +540,18 @@ $("list").addEventListener("click", e => {          // délégation : un seul li
   if (btn.dataset.a === "isave") {
     const date = $("ie-date").value, amount = round(parseFloat($("ie-amount").value));
     if (!date || !(amount > 0)) return;
+    const lab = $("ie-label").value.trim(); if (lab) it.label = lab;
     it.date = date; it.amount = amount; editItem = null; view = date.slice(0, 7);
     if (it.plan) planMsg(`Échéance « ${it.label} » modifiée (cette échéance uniquement).`);
     save(); render(); return;
   }
-  if (btn.dataset.a === "del") state.items.splice(i, 1);
-  else if (btn.dataset.a === "rec") makeRecurring(it);
-  else it.paid = !it.paid;
+  if (btn.dataset.a === "del") {
+    const snap = JSON.stringify(state);
+    state.items.splice(i, 1); save(); render();
+    toast(`« ${it.label} » supprimé`, () => restore(snap)); return;
+  }
+  if (btn.dataset.a === "rec") makeRecurring(it);
+  else { it.paid = !it.paid; it.manual = true; }
   save(); render();
 });
 
@@ -497,7 +578,15 @@ $("bal-ok").onclick = () => {
 };
 $("bal").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("bal-ok").click(); } });
 
+$("auto").checked = state.auto;
+$("auto").addEventListener("change", e => { state.auto = e.target.checked; if (state.auto) autoPay(); save(); render(); });
+function renderBackup() {
+  const d = state.lastBackup, n = d ? Math.round((Date.parse(todayISO() + "T00:00") - Date.parse(d + "T00:00")) / 864e5) : null;
+  $("bk").textContent = n == null ? "Aucune sauvegarde exportée" : n === 0 ? "Sauvegarde exportée aujourd'hui" : `Dernière sauvegarde : il y a ${n} jour${n > 1 ? "s" : ""}`;
+  $("bk").className = state.items.length > 5 && (n == null || n > 30) ? "warn" : "";
+}
 $("export").onclick = () => {
+  state.lastBackup = todayISO(); save(); renderBackup();
   const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
   Object.assign(document.createElement("a"), { href: url, download: `budget-${ym(new Date())}.json` }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -509,9 +598,10 @@ $("import").addEventListener("change", async e => {
     if (!Array.isArray(d.items)) throw 0;
     const plans = (Array.isArray(d.plans) ? d.plans : []).filter(p => p && p.id && (p.kind === "debit" || p.kind === "credit" || p.kind === "income") && p.label && p.amount > 0 && p.first)
       .map(p => ({ id: String(p.id), kind: p.kind, label: String(p.label), amount: Number(p.amount), first: String(p.first), months: p.months > 0 ? Number(p.months) : null, k: Number(p.k) || 0, cat: String(p.cat || ""), capital: p.capital > 0 ? Number(p.capital) : null }));
-    state = { start: Number(d.start) || 0, eq: normEq(d.eq), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
+    state = { start: Number(d.start) || 0, eq: normEq(d.eq), auto: d.auto !== false, lastBackup: todayISO(), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
       const o = { id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid };
       if (i.plan) o.plan = String(i.plan);
+      if (i.manual) o.manual = true;
       if (i.rest != null && i.rest >= 0) o.rest = Number(i.rest);
       return o;
     }) };
@@ -593,8 +683,10 @@ $("plan-list").addEventListener("click", e => {
   if (!p) return;
   if (btn.dataset.a === "pdel") {
     if (!confirm(`Retirer « ${p.label} » ? Les échéances à venir seront supprimées, l'historique passé est conservé.`)) return;
+    const snap = JSON.stringify(state);
     removePlan(p.id);
     planMsg(`« ${p.label} » retiré.`);
+    save(); render(); toast(`« ${p.label} » retiré`, () => restore(snap)); return;
   } else if (btn.dataset.a === "pedit") { editPlan = editPlan === p.id ? null : p.id; render(); return; }
   else if (btn.dataset.a === "pcancel") { editPlan = null; render(); return; }
   else if (btn.dataset.a === "psave") {
@@ -604,7 +696,8 @@ $("plan-list").addEventListener("click", e => {
     const today = todayISO();
     // Les échéances passées sont conservées ; les futures sont recréées avec la nouvelle date, le nouveau montant et le nombre restant.
     state.items = state.items.filter(i => !(i.plan === p.id && i.date >= today));
-    Object.assign(p, { amount, first: date, k: 0, months: cnt });
+    const plab = $("pe-label").value.trim();
+    Object.assign(p, { amount, first: date, k: 0, months: cnt, label: plab || p.label });
     const n = extendPlans();
     editPlan = null; view = date.slice(0, 7);
     planMsg(`« ${p.label} » modifié : ${n} échéance${n > 1 ? "s" : ""} planifiée${n > 1 ? "s" : ""}${cnt ? "" : " (12 mois glissants, reconduites automatiquement)"}.`);
@@ -745,7 +838,7 @@ $("imp-go").addEventListener("click", () => {
 
 $("date").value = todayISO();
 setAddType("expense");
-if (extendPlans()) localStorage.setItem(KEY, JSON.stringify(state));   // reconduit les prélèvements récurrents
+if (extendPlans() | autoPay()) persist();   // reconduit les récurrents, marque payés les prélèvements échus
 reindex();
 render();
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

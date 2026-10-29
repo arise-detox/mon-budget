@@ -69,3 +69,10 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - Récurrents, crédits, import PDF et sauvegarde sont repliés dans « Plus d'options ».
 - **Modifier les dates et le nombre** : ✎ sur un récurrent (Plus d'options) change le montant, la prochaine date de prélèvement et le nombre de prélèvements restants (vide = sans fin) ; ✎ sur une ligne de la liste déplace ou corrige une seule échéance.
 - **Équilibre du compte** : l'outil ⚖️ simule jour par jour les revenus, dépenses et prélèvements à venir (jusqu'à fin de mois, 3, 6 ou 12 mois) et indique la somme à ajouter pour ne jamais passer sous une marge choisie, avec la date limite et un versement régulier équivalent.
+
+## Améliorations d'efficacité
+
+- **Alerte en haut** quand il manquera de l'argent (date et montant), et **courbe du solde prévu** avec le point bas dans l'outil d'équilibre.
+- **Annuler** après une suppression (ligne ou récurrent), **recherche** sans accent, libellés modifiables.
+- **Paiement automatique** : un prélèvement dont la date est passée est marqué payé (désactivable ; vos corrections manuelles sont respectées).
+- **Données protégées** : écriture sécurisée (message si le stockage est bloqué), demande de stockage persistant, rappel de sauvegarde.

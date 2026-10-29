@@ -1,5 +1,5 @@
 // Service worker minimal : l'app fonctionne hors-ligne après la première visite.
-const CACHE = "budget-v8";
+const CACHE = "budget-v9";
 const FILES = ["./", "index.html", "pdf-import.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", e => {
