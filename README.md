@@ -68,3 +68,4 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - Ajout en 3 champs : Dépense / Revenu / Prélèvement + libellé + montant + date ; « 🔁 Chaque mois » pour un salaire ou un prélèvement récurrent.
 - Récurrents, crédits, import PDF et sauvegarde sont repliés dans « Plus d'options ».
 - **Modifier les dates et le nombre** : ✎ sur un récurrent (Plus d'options) change le montant, la prochaine date de prélèvement et le nombre de prélèvements restants (vide = sans fin) ; ✎ sur une ligne de la liste déplace ou corrige une seule échéance.
+- **Équilibre du compte** : l'outil ⚖️ simule jour par jour les revenus, dépenses et prélèvements à venir (jusqu'à fin de mois, 3, 6 ou 12 mois) et indique la somme à ajouter pour ne jamais passer sous une marge choisie, avec la date limite et un versement régulier équivalent.

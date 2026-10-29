@@ -62,6 +62,8 @@ li.rv.dup{opacity:.55}
 .hero .edit{margin-top:6px;font-size:.85rem;padding:3px 12px}
 #bal-edit{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px;flex-wrap:wrap}
 #bal-edit input{width:10em;text-align:center}
+.eqrow{display:grid;grid-template-columns:2fr 1fr;gap:8px;margin:8px 0}.eqrow small{display:block;color:var(--muted);font-size:.75rem}.eqrow select,.eqrow input{width:100%}
+#eq-out p{margin:6px 0}#eq-out .big{font-size:1.35rem;font-weight:700;font-variant-numeric:tabular-nums}
 .mini{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px;text-align:center}
 .mini .kpi small{font-size:.72rem}.mini .kpi b{font-size:1rem}
 @media(max-width:480px){.mini{grid-template-columns:1fr 1fr}}
@@ -108,6 +110,18 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <div class="kpi"><small id="k-end-l">Prévu fin de mois</small><b id="k-end"></b></div>
   </div>
   <p class="foot" style="margin:10px 0 0;justify-content:center">Reporté du mois précédent : <b id="k-open" style="margin-left:4px"></b></p>
+</section>
+
+<section class="card" id="eq">
+  <strong>⚖️ Garder le compte à l'équilibre</strong>
+  <div class="eqrow">
+    <label><small>Sur la période</small>
+      <select id="eq-h" aria-label="Période à couvrir">
+        <option value="1">Jusqu'à la fin de ce mois</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="12">12 mois</option>
+      </select></label>
+    <label><small>Marge de sécurité €</small><input id="eq-buf" type="number" inputmode="decimal" min="0" step="10" placeholder="0" aria-label="Marge de sécurité en euros"></label>
+  </div>
+  <div id="eq-out" aria-live="polite"></div>
 </section>
 
 <section class="card">
@@ -204,12 +218,13 @@ let view = ym(new Date());
 let filter = "all";
 let saveTimer;
 
+function normEq(e) { return { h: [1, 3, 6, 12].includes(e && e.h) ? e.h : 1, buf: e && e.buf >= 0 ? Math.round(e.buf * 100) / 100 : 0 }; }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [] };
+    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [], eq: normEq(s.eq) };
   } catch {}
-  return { start: 0, items: [], plans: [] };
+  return { start: 0, items: [], plans: [], eq: normEq() };
 }
 // Index par mois : calculé une seule fois par modification, pas à chaque rendu.
 let byMonth = new Map(), nets = [], planById = new Map(), leftAfter = new Map();
@@ -275,6 +290,59 @@ function compute(month) {
   return { opening: round(opening), inc: round(inc), exp: round(exp), deb: round(deb), pend: round(pend), now: round(now), end: round(end) };
 }
 
+// ---------- Équilibre du compte ----------
+// Simule jour par jour le solde à partir d'aujourd'hui (revenus, dépenses et prélèvements à venir)
+// et dit combien ajouter pour ne jamais passer sous la marge choisie.
+function equilibrium(h, buf) {
+  const today = todayISO(), cm = ym(new Date()), mStart = cm + "-01";
+  const endM = shiftMonth(cm, h - 1), [ey, em] = endM.split("-").map(Number);
+  const endISO = endM + "-" + String(new Date(ey, em, 0).getDate()).padStart(2, "0");
+  const events = state.items
+    .filter(i => i.date <= endISO && (i.type === "debit" ? !i.paid && i.date >= mStart : i.date > today))
+    .map(i => ({ date: i.date < today ? today : i.date, amt: signed(i) }));
+  const first = [];                                          // versements réguliers : aujourd'hui puis le 1er de chaque mois
+  for (let k = 1; k < h; k++) first.push(shiftMonth(cm, k) + "-01");
+  const start = compute(cm).now;
+  const run = dep => {
+    const evs = dep > 0 ? events.concat([{ date: today, amt: dep }], first.map(d => ({ date: d, amt: dep }))) : events;
+    evs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.amt - b.amt));      // le même jour, les sorties d'abord
+    let bal = start, min = start, minDate = today, breach = bal < buf ? today : null;
+    for (const e of evs) {
+      bal += e.amt;
+      if (bal < min) { min = bal; minDate = e.date; }
+      if (breach == null && bal < buf) breach = e.date;
+    }
+    return { min: round(min), minDate, breach, end: round(bal) };
+  };
+  const base = run(0), need = Math.max(0, round(buf - base.min));
+  let monthly = 0;
+  if (need > 0 && h > 1) {                                   // plus petit versement régulier qui suffit (dichotomie)
+    let lo = 0, hi = need;
+    for (let n = 0; n < 40; n++) { const mid = (lo + hi) / 2; if (run(mid).min >= buf) hi = mid; else lo = mid; }
+    monthly = Math.ceil(hi * 100) / 100;
+  }
+  return { ...base, need, monthly, start, endISO, h };
+}
+function renderEq() {
+  $("eq-h").value = String(state.eq.h);
+  if (document.activeElement !== $("eq-buf")) $("eq-buf").value = state.eq.buf || "";
+  const r = equilibrium(state.eq.h, state.eq.buf);
+  const m = state.eq.buf ? ` (marge ${eur.format(state.eq.buf)} comprise)` : "";
+  let html;
+  if (r.need > 0) {
+    html = `<p>Pour ne pas passer sous ${eur.format(state.eq.buf)} d'ici le ${fmtDate(r.endISO)}, ajoutez :</p>
+      <p class="big neg">${eur.format(r.need)}</p>
+      <p class="foot" style="justify-content:flex-start">${r.breach === todayISO() ? "Le compte est déjà sous la marge : à verser dès maintenant." : `À verser avant le ${fmtDate(r.breach)}.`} Point bas sans rien faire : ${eur.format(r.min)} le ${fmtDate(r.minDate)}.</p>
+      ${r.monthly && r.monthly < r.need ? `<p class="foot" style="justify-content:flex-start">Ou ${eur.format(r.monthly)} maintenant, puis chaque 1er du mois (même résultat, réparti).</p>` : ""}`;
+  } else {
+    html = `<p class="pos"><b>✓ Rien à ajouter</b>${m}</p>
+      <p class="foot" style="justify-content:flex-start">Point bas : ${eur.format(r.min)}${r.minDate === todayISO() ? " (aujourd'hui)" : " le " + fmtDate(r.minDate)} · solde à la fin de la période : ${eur.format(r.end)}.</p>`;
+  }
+  $("eq-out").innerHTML = html;
+}
+$("eq-h").addEventListener("change", e => { state.eq.h = +e.target.value; save(); renderEq(); });
+$("eq-buf").addEventListener("input", e => { state.eq.buf = Math.max(0, round(parseFloat(e.target.value) || 0)); save(); renderEq(); });
+
 // ---------- Rendu ----------
 function render() {
   $("month").textContent = monthLabel(view);
@@ -303,6 +371,7 @@ function render() {
   const labels = new Set([...state.plans.map(p => p.label), ...state.items.filter(i => i.type !== "expense").map(i => i.label)]);
   $("labels").innerHTML = [...labels].sort().map(k => `<option value="${esc(k)}">`).join("");
   renderPlans();
+  renderEq();
 }
 
 function itemEditor(it) {
@@ -440,7 +509,7 @@ $("import").addEventListener("change", async e => {
     if (!Array.isArray(d.items)) throw 0;
     const plans = (Array.isArray(d.plans) ? d.plans : []).filter(p => p && p.id && (p.kind === "debit" || p.kind === "credit" || p.kind === "income") && p.label && p.amount > 0 && p.first)
       .map(p => ({ id: String(p.id), kind: p.kind, label: String(p.label), amount: Number(p.amount), first: String(p.first), months: p.months > 0 ? Number(p.months) : null, k: Number(p.k) || 0, cat: String(p.cat || ""), capital: p.capital > 0 ? Number(p.capital) : null }));
-    state = { start: Number(d.start) || 0, plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
+    state = { start: Number(d.start) || 0, eq: normEq(d.eq), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
       const o = { id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid };
       if (i.plan) o.plan = String(i.plan);
       if (i.rest != null && i.rest >= 0) o.rest = Number(i.rest);
