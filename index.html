@@ -92,7 +92,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
 </header>
 
 <section class="card hero" aria-live="polite">
-  <small>Solde actuel de mon compte</small>
+  <small id="k-label">Solde actuel de mon compte</small>
   <div class="bal" id="k-now"></div>
   <button class="edit" id="bal-btn" type="button">✎ Modifier mon solde</button>
   <div id="bal-edit" hidden>
@@ -105,7 +105,7 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <div class="kpi"><small>Revenus du mois</small><b id="k-inc" class="pos"></b></div>
     <div class="kpi"><small>Dépenses du mois</small><b id="k-exp" class="neg"></b></div>
     <div class="kpi"><small>Prélèvements à venir</small><b id="k-pend" class="warn"></b></div>
-    <div class="kpi"><small>Prévu fin de mois</small><b id="k-end"></b></div>
+    <div class="kpi"><small id="k-end-l">Prévu fin de mois</small><b id="k-end"></b></div>
   </div>
   <p class="foot" style="margin:10px 0 0;justify-content:center">Reporté du mois précédent : <b id="k-open" style="margin-left:4px"></b></p>
 </section>
@@ -282,9 +282,14 @@ function render() {
   const set = (id, v, colored) => { const e = $(id); e.textContent = eur.format(v); if (colored) e.className = (e.className.replace(/\b(pos|neg)\b/g, "") + " " + cls(v)).trim(); };
   set("k-open", c.opening, true);
   set("k-inc", c.inc); set("k-exp", c.exp); set("k-pend", c.pend);
-  set("k-end", c.end, true);
-  const cur = compute(ym(new Date()));                       // le solde du compte est toujours celui d'aujourd'hui
-  set("k-now", cur.now, true);
+  const thisMonth = ym(new Date()), cur = compute(thisMonth), isCur = view === thisMonth;
+  // Mois en cours : solde réel d'aujourd'hui. Autre mois : le solde suit automatiquement
+  // (report du mois d'avant + revenus − dépenses − prélèvements du mois affiché).
+  set("k-now", isCur ? cur.now : c.end, true);
+  $("k-label").textContent = isCur ? "Solde actuel de mon compte" : view > thisMonth ? `Solde prévu fin ${monthLabel(view)}` : `Solde fin ${monthLabel(view)}`;
+  $("k-end-l").textContent = isCur ? "Prévu fin de mois" : "Variation du mois";
+  set("k-end", isCur ? c.end : round(c.end - c.opening), true);
+  $("bal-btn").hidden = !isCur; if (!isCur) $("bal-edit").hidden = true;
   $("bal-hint").textContent = !state.items.length && !state.start ? "Commencez par indiquer le solde de votre compte bancaire." : "";
 
   const monthItems = byMonth.get(view) || [];
