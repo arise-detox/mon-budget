@@ -168,10 +168,6 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <datalist id="labels"></datalist>
     <input id="amount" class="w3" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Montant €" required aria-label="Montant en euros">
     <input id="date" class="w3" type="date" required aria-label="Date">
-    <input id="cur" class="w3" maxlength="3" list="cur-list" value="EUR" autocapitalize="characters" autocomplete="off" placeholder="Devise (EUR)" aria-label="Devise">
-    <datalist id="cur-list"></datalist>
-    <input id="rate" class="w3" type="number" inputmode="decimal" step="any" min="0" placeholder="Taux : 1 € = ?" aria-label="Taux de change : nombre d'unités de la devise pour 1 euro" hidden>
-    <p id="cur-hint" class="foot w6" style="margin:0" hidden></p>
     <input id="cat" class="w6" maxlength="40" list="cats-list" placeholder="Catégorie (facultatif) : Courses, Logement…" aria-label="Catégorie">
     <datalist id="cats-list"></datalist>
     <label class="chk w6" id="rec-row" hidden><input id="rec" type="checkbox"> 🔁 Chaque mois</label>
@@ -259,9 +255,6 @@ const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" 
 const monthFmt = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const eur0 = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const dayFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" });
-const CURRENCIES = ["USD", "GBP", "CHF", "CAD", "AUD", "JPY", "CNY", "THB", "VND", "IDR", "MYR", "SGD", "INR", "AED", "TRY", "MAD", "TND", "DZD", "XOF", "PLN", "CZK", "HUF", "SEK", "NOK", "DKK", "BRL", "MXN", "ZAR"];
-const validCur = c => { if (!/^[A-Z]{3}$/.test(c)) return false; try { new Intl.NumberFormat("fr-FR", { style: "currency", currency: c }); return true; } catch { return false; } };
-const fmtCur = (c, v) => { try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: c }).format(v); } catch { return v + " " + c; } };
 const TYPES = { expense: "Dépense", debit: "Prélèvement", income: "Revenu" };
 
 // ---------- État & persistance ----------
@@ -274,18 +267,13 @@ let view = ym(new Date());
 let filter = "all";
 let saveTimer;
 
-function normRates(r) {                 // derniers taux utilisés : « 1 € = r unités de la devise »
-  const o = {};
-  if (r && typeof r === "object") for (const [k, v] of Object.entries(r)) if (/^[A-Z]{3}$/.test(k) && v > 0 && isFinite(v)) o[k] = Number(v);
-  return o;
-}
 function normEq(e) { return { h: [1, 3, 6, 12, 24, 36, 60].includes(e && e.h) ? e.h : 1, buf: e && e.buf >= 0 ? Math.round(e.buf * 100) / 100 : 0 }; }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [], eq: normEq(s.eq), rates: normRates(s.rates), auto: s.auto !== false, lastBackup: typeof s.lastBackup === "string" ? s.lastBackup : null };
+    if (s && Array.isArray(s.items)) return { start: Number(s.start) || 0, items: s.items, plans: Array.isArray(s.plans) ? s.plans : [], eq: normEq(s.eq), auto: s.auto !== false, lastBackup: typeof s.lastBackup === "string" ? s.lastBackup : null };
   } catch {}
-  return { start: 0, items: [], plans: [], eq: normEq(), rates: {}, auto: true, lastBackup: null };
+  return { start: 0, items: [], plans: [], eq: normEq(), auto: true, lastBackup: null };
 }
 // Index par mois : calculé une seule fois par modification, pas à chaque rendu.
 let byMonth = new Map(), nets = [], planById = new Map(), leftAfter = new Map();
@@ -342,7 +330,7 @@ function toast(msg, undo) {
   clearTimeout(toastT); toastT = setTimeout(() => { $("toast").hidden = true; undoFn = null; }, 7000);
 }
 $("toast-u").onclick = () => { const f = undoFn; undoFn = null; $("toast").hidden = true; if (f) f(); };
-const restore = snap => { state = JSON.parse(snap); state.eq = normEq(state.eq); state.rates = normRates(state.rates); save(); render(); };
+const restore = snap => { state = JSON.parse(snap); state.eq = normEq(state.eq); save(); render(); };
 
 function ym(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
 function shiftMonth(m, n) { const [y, mo] = m.split("-").map(Number); return ym(new Date(y, mo - 1 + n, 1)); }
@@ -534,9 +522,7 @@ function itemEditor(it) {
   return `<li class="ed" data-id="${it.id}">
     <label><small>Libellé</small><input id="ie-label" maxlength="80" value="${esc(it.label)}"></label>
     <label><small>Date</small><input id="ie-date" type="date" value="${it.date}"></label>
-    ${it.cur ? `<label><small>Montant en ${esc(it.cur)}</small><input id="ie-orig" type="number" inputmode="decimal" step="any" min="0.01" value="${it.orig}"></label>
-    <label><small>Taux : 1 € = ? ${esc(it.cur)}</small><input id="ie-rate" type="number" inputmode="decimal" step="any" min="0" value="${it.rate}"></label>`
-      : `<label><small>Montant €</small><input id="ie-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${it.amount}"></label>`}
+    <label><small>Montant €</small><input id="ie-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${it.amount}"></label>
     <label><small>Catégorie</small><input id="ie-cat" maxlength="40" list="cats-list" value="${esc(it.cat || "")}"></label>
     <span class="btns"><button data-a="isave" class="primary">Enregistrer</button><button data-a="icancel">Annuler</button></span>
   </li>`;
@@ -568,7 +554,7 @@ function row(it) {
     <span>${esc(it.label)}${badge}</span>
     <span class="amt ${color}">${sign} ${eur.format(it.amount)}</span>
     <span class="act">${pay}${rec}<button data-a="edit" title="Changer la date ou le montant" aria-label="Modifier">✎</button><button data-a="del" title="Supprimer" aria-label="Supprimer">🗑</button></span>
-    <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}${extra}${it.cur && validCur(it.cur) ? ` · ${fmtCur(it.cur, it.orig)} (1 € = ${it.rate} ${it.cur})` : ""}</span>
+    <span class="meta">${dayFmt.format(new Date(it.date + "T00:00"))}${it.cat ? " · " + esc(it.cat) : ""} · ${TYPES[it.type]}${extra}</span>
   </li>${editItem === it.id ? itemEditor(it) : ""}`;
 }
 
@@ -591,37 +577,11 @@ function setAddType(t) {
 $("type-seg").addEventListener("click", e => { const b = e.target.closest("button[data-t]"); if (b) setAddType(b.dataset.t); });
 $("rec").addEventListener("change", () => setAddType(addType));
 const addMsg = t => { $("add-msg").textContent = t; };
-const curOf = () => $("cur").value.trim().toUpperCase() || "EUR";
-function updateCur() {
-  const c = curOf(), foreign = c !== "EUR";
-  $("rate").hidden = !foreign; $("cur-hint").hidden = !foreign;
-  $("amount").placeholder = foreign ? `Montant en ${c}` : "Montant €";
-  if (!foreign) return;
-  const a = parseFloat($("amount").value), r = parseFloat($("rate").value);
-  $("cur-hint").textContent = !validCur(c) ? "Devise inconnue : code à 3 lettres (USD, GBP, THB…)."
-    : !(r > 0) ? `Indiquez le taux : combien de ${c} pour 1 €.`
-    : a > 0 ? `≈ ${eur.format(round(a / r))} (1 € = ${r} ${c})` : `1 € = ${r} ${c}`;
-}
-$("cur").addEventListener("input", () => { const c = curOf(); $("rate").value = c !== "EUR" && state.rates[c] ? state.rates[c] : ""; updateCur(); });
-$("rate").addEventListener("input", updateCur);
-$("amount").addEventListener("input", updateCur);
-$("cur-list").innerHTML = CURRENCIES.map(c => `<option value="${c}">`).join("");
 
 $("form").addEventListener("submit", e => {
   e.preventDefault();
-  let amount = round(parseFloat($("amount").value));
+  const amount = round(parseFloat($("amount").value));
   if (!(amount > 0)) return;
-  const cur = curOf();
-  let fx = null;                                             // ligne dans une autre devise : converti en euros avec le taux saisi
-  if (cur !== "EUR") {
-    const rate = parseFloat($("rate").value);
-    if (!validCur(cur)) { addMsg("Devise inconnue : utilisez un code à 3 lettres (USD, GBP, THB…)."); return; }
-    if (!(rate > 0)) { addMsg(`Indiquez le taux de change : combien de ${cur} pour 1 €.`); $("rate").focus(); return; }
-    fx = { cur, orig: amount, rate };
-    amount = round(amount / rate);
-    if (!(amount > 0)) { addMsg("Montant trop petit une fois converti en euros."); return; }
-    state.rates[cur] = rate;
-  }
   const type = addType, date = $("date").value;
   const label = $("label").value.trim(), cat = $("cat").value.trim();
   if (!label || !date) return;
@@ -629,14 +589,13 @@ $("form").addEventListener("submit", e => {
     const months = Math.min(480, parseInt($("months").value, 10) || 0) || null;
     state.plans.push({ id: uid(), kind: type, label, amount, first: date, months, k: 0, cat });
     const n = extendPlans();
-    addMsg(`« ${label} » mémorisé : ${n} ligne${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}${months ? "" : " (5 ans glissants, reconduits automatiquement)"}${fx ? ` · ${eur.format(amount)} par mois (converti depuis ${fmtCur(fx.cur, fx.orig)})` : ""}.`);
+    addMsg(`« ${label} » mémorisé : ${n} ligne${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}${months ? "" : " (5 ans glissants, reconduits automatiquement)"}.`);
   } else {
-    state.items.push({ id: uid(), type, label, amount, date, cat, paid: type !== "debit" || date < todayISO(), ...(fx || {}) });
-    addMsg(`${{ expense: "Dépense", income: "Revenu", debit: "Prélèvement" }[type]} « ${label} » : ${eur.format(amount)} ajouté${fx ? ` (${fmtCur(fx.cur, fx.orig)})` : ""}.`);
+    state.items.push({ id: uid(), type, label, amount, date, cat, paid: type !== "debit" || date < todayISO() });
+    addMsg(`${{ expense: "Dépense", income: "Revenu", debit: "Prélèvement" }[type]} « ${label} » : ${eur.format(amount)} ajouté.`);
   }
   save();
   view = date.slice(0, 7);
-  $("cur").value = "EUR"; $("rate").value = ""; updateCur();
   $("label").value = ""; $("cat").value = ""; $("amount").value = ""; $("months").value = ""; $("rec").checked = false; setAddType(addType); $("label").focus();
   render();
 });
@@ -651,14 +610,7 @@ $("list").addEventListener("click", e => {          // délégation : un seul li
   if (btn.dataset.a === "edit") { editItem = editItem === id ? null : id; render(); return; }
   if (btn.dataset.a === "icancel") { editItem = null; render(); return; }
   if (btn.dataset.a === "isave") {
-    const date = $("ie-date").value;
-    let amount;
-    if (it.cur) {
-      const o = parseFloat($("ie-orig").value), r = parseFloat($("ie-rate").value);
-      if (!(o > 0) || !(r > 0)) return;
-      amount = round(o / r);
-      if (amount > 0) { it.orig = round(o); it.rate = r; }
-    } else amount = round(parseFloat($("ie-amount").value));
+    const date = $("ie-date").value, amount = round(parseFloat($("ie-amount").value));
     if (!date || !(amount > 0)) return;
     const lab = $("ie-label").value.trim(); if (lab) it.label = lab;
     it.cat = $("ie-cat").value.trim();
@@ -719,8 +671,8 @@ $("export").onclick = () => {
 $("export-csv").onclick = () => {                      // tableur (Excel français : séparateur « ; », UTF-8 avec BOM)
   const txt = s => { s = String(s); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const rows = [...state.items].sort((a, b) => a.date.localeCompare(b.date)).map(i =>
-    [i.date, txt(TYPES[i.type]), txt(i.label), txt(i.cat || ""), (i.type === "income" ? "" : "-") + String(i.amount).replace(".", ","), i.type === "debit" ? (i.paid ? "payé" : "à venir") : "", i.cur ? String(i.orig).replace(".", ",") : "", i.cur || ""].join(";"));
-  saveFile(`budget-${ym(new Date())}.csv`, "\ufeffDate;Type;Libellé;Catégorie;Montant;Statut;Montant d'origine;Devise d'origine\r\n" + rows.join("\r\n"), "text/csv;charset=utf-8");
+    [i.date, txt(TYPES[i.type]), txt(i.label), txt(i.cat || ""), (i.type === "income" ? "" : "-") + String(i.amount).replace(".", ","), i.type === "debit" ? (i.paid ? "payé" : "à venir") : ""].join(";"));
+  saveFile(`budget-${ym(new Date())}.csv`, "\ufeffDate;Type;Libellé;Catégorie;Montant;Statut\r\n" + rows.join("\r\n"), "text/csv;charset=utf-8");
 };
 const safeRaw = () => { try { return localStorage.getItem(SAFE_KEY); } catch { return null; } };
 $("export-safe").onclick = () => { const r = safeRaw(); if (r) saveFile("budget-copie-avant-mise-a-jour.json", r, "application/json"); };
@@ -733,11 +685,10 @@ $("import").addEventListener("change", async e => {
       .map(p => ({ id: String(p.id), kind: p.kind, label: String(p.label), amount: Number(p.amount), first: String(p.first), months: p.months > 0 ? Number(p.months) : null, k: Number(p.k) || 0, cat: String(p.cat || ""), capital: p.capital > 0 ? Number(p.capital) : null }));
     if ((state.items.length || state.plans.length) && !confirm("Importer ce fichier remplace toutes les données actuellement sur cet appareil. Continuer ? (vous pourrez annuler juste après)")) { e.target.value = ""; return; }
     const snap = JSON.stringify(state);
-    state = { start: Number(d.start) || 0, eq: normEq(d.eq), rates: normRates(d.rates), auto: d.auto !== false, lastBackup: todayISO(), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
+    state = { start: Number(d.start) || 0, eq: normEq(d.eq), auto: d.auto !== false, lastBackup: todayISO(), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
       const o = { id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid };
       if (i.plan) o.plan = String(i.plan);
       if (i.manual) o.manual = true;
-      if (validCur(String(i.cur)) && i.orig > 0 && i.rate > 0) { o.cur = String(i.cur); o.orig = Number(i.orig); o.rate = Number(i.rate); }
       if (i.rest != null && i.rest >= 0) o.rest = Number(i.rest);
       return o;
     }) };
