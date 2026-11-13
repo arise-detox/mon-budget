@@ -30,6 +30,7 @@ input,select{background:var(--card);border:1px solid var(--line);border-radius:8
 .kpi small{display:block;color:var(--muted);font-size:.78rem}
 .kpi b{font-size:1.2rem;font-variant-numeric:tabular-nums}
 .kpi.big b{font-size:1.5rem}
+.muted{color:var(--muted)}
 .pos{color:var(--pos)}.neg{color:var(--neg)}.warn{color:var(--warn)}
 form{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
 form .w2{grid-column:span 2}form .w3{grid-column:span 3}form .w6{grid-column:span 6}
@@ -87,6 +88,18 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
 #q{width:100%;margin-bottom:8px}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;display:flex;gap:12px;align-items:center;background:var(--text);color:var(--bg);padding:10px 14px;border-radius:99px;font-size:.9rem;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:92vw}
 #toast button{background:none;border:0;color:inherit;font-weight:700;text-decoration:underline;padding:0}
+.yr-head,.yr-row{display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px;padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums;font-size:.86rem;align-items:center}
+.yr-head{color:var(--muted);font-size:.72rem;border-bottom:1px solid var(--line)}
+.yr-row{width:100%;border:0;border-top:1px solid var(--line);border-radius:0;background:none;color:inherit}
+.yr-row:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.yr-head span:first-child,.yr-row span:first-child{text-align:left;text-transform:capitalize}
+.yr-row[aria-current=true]{background:color-mix(in srgb,var(--accent) 16%,transparent);font-weight:600}
+.yr-row.now span:first-child::after{content:" \2022";color:var(--accent)}
+.yr-tot{border-top:2px solid var(--line);font-weight:700}
+.cb{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:10px 0 0;font-size:.9rem}
+.cb b{font-variant-numeric:tabular-nums}
+.cb .bar{grid-column:1/-1;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.cb .bar i{display:block;height:100%;background:var(--accent)}
 @media(max-width:560px){li.rv{grid-template-columns:auto 1fr 6.5em}li.rv select{grid-column:2/4}}
 </style>
 </head>
@@ -128,12 +141,20 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
   <div class="eqrow">
     <label><small>Sur la période</small>
       <select id="eq-h" aria-label="Période à couvrir">
-        <option value="1">Jusqu'à la fin de ce mois</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="12">12 mois</option>
+        <option value="1">Jusqu'à la fin de ce mois</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="12">12 mois</option><option value="24">2 ans</option><option value="36">3 ans</option><option value="60">5 ans</option>
       </select></label>
     <label><small>Marge de sécurité €</small><input id="eq-buf" type="number" inputmode="decimal" min="0" step="10" placeholder="0" aria-label="Marge de sécurité en euros"></label>
   </div>
   <div id="eq-out" aria-live="polite"></div>
   <div id="eq-chart"></div>
+</section>
+
+<section class="card" id="yr">
+  <div class="foot" style="margin:0 0 6px">
+    <strong style="color:var(--text)">📅 Vue de l'année</strong>
+    <span class="nav"><button id="yr-prev" type="button" aria-label="Année précédente">◀</button><b id="yr-label"></b><button id="yr-next" type="button" aria-label="Année suivante">▶</button></span>
+  </div>
+  <div id="yr-body"></div>
 </section>
 
 <section class="card">
@@ -147,6 +168,8 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <datalist id="labels"></datalist>
     <input id="amount" class="w3" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Montant €" required aria-label="Montant en euros">
     <input id="date" class="w3" type="date" required aria-label="Date">
+    <input id="cat" class="w6" maxlength="40" list="cats-list" placeholder="Catégorie (facultatif) : Courses, Logement…" aria-label="Catégorie">
+    <datalist id="cats-list"></datalist>
     <label class="chk w6" id="rec-row" hidden><input id="rec" type="checkbox"> 🔁 Chaque mois</label>
     <input id="months" class="w6" type="number" inputmode="numeric" min="1" max="480" step="1" placeholder="Durée en mois (vide = sans fin)" hidden aria-label="Durée en mois">
     <button class="primary w6" type="submit">Ajouter</button>
@@ -163,6 +186,11 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
     <button data-f="income" aria-pressed="false">Revenus</button>
   </div>
   <ul id="list"></ul>
+</section>
+
+<section class="card" id="cats" hidden>
+  <strong>🏷️ Dépenses du mois par catégorie</strong>
+  <div id="cats-body"></div>
 </section>
 
 <details class="more">
@@ -209,6 +237,8 @@ li.ed .btns{display:flex;gap:6px;align-items:end}
       <span id="bk">Sauvegarde de vos données</span>
       <span>
         <button id="export">Exporter JSON</button>
+        <button id="export-csv" type="button">Exporter CSV</button>
+        <button id="export-safe" type="button" hidden title="Vos données telles qu'elles étaient avant la mise à jour de l'application">Copie d'avant la mise à jour</button>
         <label class="file"><input id="import" type="file" accept="application/json" hidden><span class="btn" style="border:1px solid var(--line);border-radius:8px;padding:6px 12px;display:inline-block">Importer</span></label>
       </span>
     </div>
@@ -223,17 +253,21 @@ const KEY = "budget-app-v1";
 const $ = id => document.getElementById(id);
 const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 const monthFmt = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
+const eur0 = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const dayFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" });
 const TYPES = { expense: "Dépense", debit: "Prélèvement", income: "Revenu" };
 
 // ---------- État & persistance ----------
+// Copie de sécurité unique, faite avant que cette version ne touche à quoi que ce soit.
+const SAFE_KEY = KEY + "-avant-maj";
+try { const raw = localStorage.getItem(KEY); if (raw && !localStorage.getItem(SAFE_KEY)) localStorage.setItem(SAFE_KEY, raw); } catch {}
 let state = load();
 let editItem = null, editPlan = null;
 let view = ym(new Date());
 let filter = "all";
 let saveTimer;
 
-function normEq(e) { return { h: [1, 3, 6, 12].includes(e && e.h) ? e.h : 1, buf: e && e.buf >= 0 ? Math.round(e.buf * 100) / 100 : 0 }; }
+function normEq(e) { return { h: [1, 3, 6, 12, 24, 36, 60].includes(e && e.h) ? e.h : 1, buf: e && e.buf >= 0 ? Math.round(e.buf * 100) / 100 : 0 }; }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
@@ -278,7 +312,7 @@ function showWarn() {
   w.textContent = "⚠️ Impossible d'enregistrer sur cet appareil (navigation privée ou stockage plein) : exportez vos données dans « Plus d'options » avant de fermer.";
 }
 window.addEventListener("pagehide", persist);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persist(); else { if (autoPay()) { save(); } render(); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persist(); else { const a = extendPlans(), b = autoPay(); if (a || b) save(); render(); } });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch {}   // demande au navigateur de ne pas effacer les données
 
 // ---------- Utilitaires ----------
@@ -441,17 +475,55 @@ function render() {
   // libellés mémorisés (récurrents, crédits, revenus et prélèvements déjà saisis)
   const labels = new Set([...state.plans.map(p => p.label), ...state.items.filter(i => i.type !== "expense").map(i => i.label)]);
   $("labels").innerHTML = [...labels].sort().map(k => `<option value="${esc(k)}">`).join("");
+  const cats = new Set(["Courses", "Logement", "Transport", "Loisirs", "Santé", "Restaurants", "Abonnements", ...state.items.map(i => i.cat).filter(Boolean)]);
+  $("cats-list").innerHTML = [...cats].sort((a, b) => a.localeCompare(b, "fr")).map(k => `<option value="${esc(k)}">`).join("");
+  renderCats();
+  renderYear();
   renderPlans();
   renderEq();
   renderBackup();
   $("auto").checked = state.auto;
 }
 
+function renderCats() {
+  const tot = new Map(); let sum = 0;
+  for (const it of byMonth.get(view) || []) {
+    if (it.type === "income") continue;
+    const k = it.cat || "Sans catégorie";
+    tot.set(k, (tot.get(k) || 0) + it.amount); sum += it.amount;
+  }
+  $("cats").hidden = !sum;
+  $("cats-body").innerHTML = [...tot].sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<div class="cb"><span>${esc(k)}</span><b>${eur.format(round(v))} · ${Math.round(v / sum * 100)} %</b><div class="bar"><i style="width:${(v / sum * 100).toFixed(1)}%"></i></div></div>`).join("");
+}
+function renderYear() {
+  const y = view.slice(0, 4), cur = ym(new Date());
+  $("yr-label").textContent = y;
+  let tin = 0, tout = 0, last = 0, rows = "";
+  const money = (v, c) => v ? `<span class="${c}">${eur0.format(v)}</span>` : `<span class="muted">–</span>`;
+  for (let m = 1; m <= 12; m++) {
+    const key = y + "-" + String(m).padStart(2, "0"), c = compute(key), out = round(c.exp + c.deb);
+    tin += c.inc; tout += out; last = c.end;
+    rows += `<button type="button" class="yr-row${key === cur ? " now" : ""}" data-m="${key}"${key === view ? ' aria-current="true"' : ""}>
+      <span>${new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(new Date(+y, m - 1, 1))}</span>${money(c.inc, "pos")}${money(out, "neg")}<span class="${cls(c.end)}">${eur0.format(c.end)}</span></button>`;
+  }
+  $("yr-body").innerHTML = `<div class="yr-head"><span>Mois</span><span>Revenus</span><span>Sorties</span><span>Solde fin</span></div>${rows}
+    <div class="yr-row yr-tot"><span>Année</span><span class="pos">${eur0.format(round(tin))}</span><span class="neg">${eur0.format(round(tout))}</span><span class="${cls(last)}">${eur0.format(last)}</span></div>`;
+}
+$("yr-body").addEventListener("click", e => { const b = e.target.closest("button[data-m]"); if (b) { view = b.dataset.m; render(); window.scrollTo({ top: 0, behavior: "smooth" }); } });
+$("yr-prev").onclick = () => { view = shiftMonth(view, -12); render(); };
+$("yr-next").onclick = () => { view = shiftMonth(view, 12); render(); };
+document.addEventListener("keydown", e => {            // ← / → : mois précédent / suivant (hors champ de saisie)
+  if (e.target !== document.body || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.key === "ArrowLeft") $("prev").click(); else if (e.key === "ArrowRight") $("next").click();
+});
+
 function itemEditor(it) {
   return `<li class="ed" data-id="${it.id}">
     <label><small>Libellé</small><input id="ie-label" maxlength="80" value="${esc(it.label)}"></label>
     <label><small>Date</small><input id="ie-date" type="date" value="${it.date}"></label>
     <label><small>Montant €</small><input id="ie-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${it.amount}"></label>
+    <label><small>Catégorie</small><input id="ie-cat" maxlength="40" list="cats-list" value="${esc(it.cat || "")}"></label>
     <span class="btns"><button data-a="isave" class="primary">Enregistrer</button><button data-a="icancel">Annuler</button></span>
   </li>`;
 }
@@ -511,20 +583,20 @@ $("form").addEventListener("submit", e => {
   const amount = round(parseFloat($("amount").value));
   if (!(amount > 0)) return;
   const type = addType, date = $("date").value;
-  const label = $("label").value.trim();
+  const label = $("label").value.trim(), cat = $("cat").value.trim();
   if (!label || !date) return;
   if (type !== "expense" && $("rec").checked) {              // revenu / prélèvement mensuel : mémorisé et reconduit
     const months = Math.min(480, parseInt($("months").value, 10) || 0) || null;
-    state.plans.push({ id: uid(), kind: type, label, amount, first: date, months, k: 0, cat: "" });
+    state.plans.push({ id: uid(), kind: type, label, amount, first: date, months, k: 0, cat });
     const n = extendPlans();
-    addMsg(`« ${label} » mémorisé : ${n} ligne${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}${months ? "" : " (12 mois glissants, reconduits automatiquement)"}.`);
+    addMsg(`« ${label} » mémorisé : ${n} ligne${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}${months ? "" : " (5 ans glissants, reconduits automatiquement)"}.`);
   } else {
-    state.items.push({ id: uid(), type, label, amount, date, cat: "", paid: type !== "debit" || date < todayISO() });
+    state.items.push({ id: uid(), type, label, amount, date, cat, paid: type !== "debit" || date < todayISO() });
     addMsg(`${{ expense: "Dépense", income: "Revenu", debit: "Prélèvement" }[type]} « ${label} » : ${eur.format(amount)} ajouté.`);
   }
   save();
   view = date.slice(0, 7);
-  $("label").value = ""; $("amount").value = ""; $("months").value = ""; $("rec").checked = false; setAddType(addType); $("label").focus();
+  $("label").value = ""; $("cat").value = ""; $("amount").value = ""; $("months").value = ""; $("rec").checked = false; setAddType(addType); $("label").focus();
   render();
 });
 
@@ -541,6 +613,7 @@ $("list").addEventListener("click", e => {          // délégation : un seul li
     const date = $("ie-date").value, amount = round(parseFloat($("ie-amount").value));
     if (!date || !(amount > 0)) return;
     const lab = $("ie-label").value.trim(); if (lab) it.label = lab;
+    it.cat = $("ie-cat").value.trim();
     it.date = date; it.amount = amount; editItem = null; view = date.slice(0, 7);
     if (it.plan) planMsg(`Échéance « ${it.label} » modifiée (cette échéance uniquement).`);
     save(); render(); return;
@@ -584,13 +657,25 @@ function renderBackup() {
   const d = state.lastBackup, n = d ? Math.round((Date.parse(todayISO() + "T00:00") - Date.parse(d + "T00:00")) / 864e5) : null;
   $("bk").textContent = n == null ? "Aucune sauvegarde exportée" : n === 0 ? "Sauvegarde exportée aujourd'hui" : `Dernière sauvegarde : il y a ${n} jour${n > 1 ? "s" : ""}`;
   $("bk").className = state.items.length > 5 && (n == null || n > 30) ? "warn" : "";
+  $("export-safe").hidden = !safeRaw();
+}
+function saveFile(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  Object.assign(document.createElement("a"), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 $("export").onclick = () => {
   state.lastBackup = todayISO(); save(); renderBackup();
-  const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
-  Object.assign(document.createElement("a"), { href: url, download: `budget-${ym(new Date())}.json` }).click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(`budget-${ym(new Date())}.json`, JSON.stringify(state, null, 2), "application/json");
 };
+$("export-csv").onclick = () => {                      // tableur (Excel français : séparateur « ; », UTF-8 avec BOM)
+  const txt = s => { s = String(s); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const rows = [...state.items].sort((a, b) => a.date.localeCompare(b.date)).map(i =>
+    [i.date, txt(TYPES[i.type]), txt(i.label), txt(i.cat || ""), (i.type === "income" ? "" : "-") + String(i.amount).replace(".", ","), i.type === "debit" ? (i.paid ? "payé" : "à venir") : ""].join(";"));
+  saveFile(`budget-${ym(new Date())}.csv`, "\ufeffDate;Type;Libellé;Catégorie;Montant;Statut\r\n" + rows.join("\r\n"), "text/csv;charset=utf-8");
+};
+const safeRaw = () => { try { return localStorage.getItem(SAFE_KEY); } catch { return null; } };
+$("export-safe").onclick = () => { const r = safeRaw(); if (r) saveFile("budget-copie-avant-mise-a-jour.json", r, "application/json"); };
 $("import").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return;
   try {
@@ -598,6 +683,8 @@ $("import").addEventListener("change", async e => {
     if (!Array.isArray(d.items)) throw 0;
     const plans = (Array.isArray(d.plans) ? d.plans : []).filter(p => p && p.id && (p.kind === "debit" || p.kind === "credit" || p.kind === "income") && p.label && p.amount > 0 && p.first)
       .map(p => ({ id: String(p.id), kind: p.kind, label: String(p.label), amount: Number(p.amount), first: String(p.first), months: p.months > 0 ? Number(p.months) : null, k: Number(p.k) || 0, cat: String(p.cat || ""), capital: p.capital > 0 ? Number(p.capital) : null }));
+    if ((state.items.length || state.plans.length) && !confirm("Importer ce fichier remplace toutes les données actuellement sur cet appareil. Continuer ? (vous pourrez annuler juste après)")) { e.target.value = ""; return; }
+    const snap = JSON.stringify(state);
     state = { start: Number(d.start) || 0, eq: normEq(d.eq), auto: d.auto !== false, lastBackup: todayISO(), plans, items: d.items.filter(i => i && i.date && i.amount > 0 && TYPES[i.type]).map(i => {
       const o = { id: i.id || uid(), type: i.type, label: String(i.label || ""), amount: Number(i.amount), date: String(i.date), cat: String(i.cat || ""), paid: i.type !== "debit" || !!i.paid };
       if (i.plan) o.plan = String(i.plan);
@@ -605,19 +692,21 @@ $("import").addEventListener("change", async e => {
       if (i.rest != null && i.rest >= 0) o.rest = Number(i.rest);
       return o;
     }) };
-    save(); render();
     view = ym(new Date());
-  } catch { alert("Fichier invalide."); }
+    save(); render();
+    toast("Données importées", () => restore(snap));
+  } catch { alert("Fichier invalide : vos données n'ont pas été modifiées."); }
   e.target.value = "";
 });
 
 // ---------- Prélèvements récurrents & crédits ----------
 // Un « plan » mémorise le libellé et le montant. Les prélèvements sans fin sont reconduits
-// sur 12 mois glissants ; un crédit garde ses échéances et son reste à rembourser.
+// sur 5 ans glissants ; un crédit garde ses échéances et son reste à rembourser.
 const planMsg = t => { $("plan-msg").textContent = t; $("add-msg").textContent = t; };
 
+const HORIZON_MOIS = 60;   // les récurrents sont planifiés 5 ans à l'avance
 function extendPlans() {
-  const today = todayISO(), horizon = addMonths(today, 12);
+  const today = todayISO(), horizon = addMonths(today, HORIZON_MOIS);
   let added = 0;
   for (const p of state.plans) {
     if (p.kind !== "debit" && p.kind !== "income") continue;
@@ -636,7 +725,7 @@ function makeRecurring(it) {
   state.plans.push(p);
   it.plan = p.id;
   const n = extendPlans();
-  planMsg(`« ${p.label} » mémorisé : ${n} prélèvements ajoutés sur les 12 prochains mois.`);
+  planMsg(`« ${p.label} » mémorisé : ${n} prélèvements ajoutés sur les 5 prochaines années.`);
 }
 
 function removePlan(id) {
@@ -700,7 +789,7 @@ $("plan-list").addEventListener("click", e => {
     Object.assign(p, { amount, first: date, k: 0, months: cnt, label: plab || p.label });
     const n = extendPlans();
     editPlan = null; view = date.slice(0, 7);
-    planMsg(`« ${p.label} » modifié : ${n} échéance${n > 1 ? "s" : ""} planifiée${n > 1 ? "s" : ""}${cnt ? "" : " (12 mois glissants, reconduites automatiquement)"}.`);
+    planMsg(`« ${p.label} » modifié : ${n} échéance${n > 1 ? "s" : ""} planifiée${n > 1 ? "s" : ""}${cnt ? "" : " (5 ans glissants, reconduites automatiquement)"}.`);
   }
   save(); render();
 });

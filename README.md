@@ -20,7 +20,7 @@ Les données restent dans le `localStorage` de ton navigateur (rien n'est envoy�
 
 La section **« Mes prélèvements et crédits »** garde les libellés et les montants :
 
-- **Ajouter** un prélèvement (libellé, montant, premier prélèvement, durée facultative) : il est reconduit automatiquement chaque mois (12 mois glissants) tant que tu ne le retires pas.
+- **Ajouter** un prélèvement (libellé, montant, premier prélèvement, durée facultative) : il est reconduit automatiquement chaque mois (5 ans glissants) tant que tu ne le retires pas.
 - **Rendre récurrent** : le bouton 🔁 d'un prélèvement déjà saisi le mémorise et crée les mois suivants (l'historique passé n'est pas recréé).
 - **Modifier le montant** (✎) : seules les échéances à venir changent. **Retirer** (🗑) : les échéances à venir sont supprimées, l'historique est conservé.
 - Les libellés déjà utilisés sont proposés à la saisie.
@@ -51,9 +51,26 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 
 > ⚠️ Ne commite jamais tes fichiers d'export `budget-*.json` dans un dépôt public : ce sont tes données financières (ils sont ignorés par `.gitignore`).
 
+## Nouveautés de la version 1.2
+
+- **Plus de limite à un an** : les récurrents sont planifiés **5 ans à l'avance** (et la fenêtre se prolonge toute seule), la navigation par mois n'a pas de limite, et l'équilibre du compte peut couvrir 2, 3 ou 5 ans.
+- **Vue de l'année** : revenus, sorties et solde de fin de chaque mois, totaux de l'année ; un clic ouvre le mois.
+- **Catégories** : champ facultatif à l'ajout et à la modification d'une ligne, avec la répartition des dépenses du mois en barres.
+- **Export CSV** pour Excel / LibreOffice, en plus de l'export JSON.
+- **Import plus sûr** : confirmation avant de remplacer les données, bouton « Annuler » juste après.
+- **Copie de sécurité** : à la première ouverture de cette version, vos données sont copiées telles quelles (clé `budget-app-v1-avant-maj`) ; le bouton « Copie d'avant la mise à jour » les exporte. Le format de stockage n'a pas changé : vos données existantes sont conservées, seules des échéances futures sont ajoutées aux récurrents.
+- Raccourcis ← / → pour changer de mois.
+
+## Tests
+
+```bash
+npm install
+npm test        # jsdom : vérifie notamment que les données existantes ne sont jamais modifiées
+```
+
 ## Optimisations
 
-- Prélèvements/dépenses récurrents : champ « Répéter (mois) » (jusqu'à 60 mois, fin de mois gérée : 31 janvier → 28 février)
+- Prélèvements/dépenses récurrents : durée en mois facultative (jusqu'à 480 mois, fin de mois gérée : 31 janvier → 28 février)
 - Application installable et utilisable **hors-ligne** (PWA : `manifest.webmanifest` + `sw.js`)
 - Politique de sécurité (CSP) stricte : aucune requête externe possible
 - Index par mois recalculé une seule fois par modification : le report ne reparcourt plus toutes les lignes à chaque affichage
@@ -68,7 +85,7 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - Ajout en 3 champs : Dépense / Revenu / Prélèvement + libellé + montant + date ; « 🔁 Chaque mois » pour un salaire ou un prélèvement récurrent.
 - Récurrents, crédits, import PDF et sauvegarde sont repliés dans « Plus d'options ».
 - **Modifier les dates et le nombre** : ✎ sur un récurrent (Plus d'options) change le montant, la prochaine date de prélèvement et le nombre de prélèvements restants (vide = sans fin) ; ✎ sur une ligne de la liste déplace ou corrige une seule échéance.
-- **Équilibre du compte** : l'outil ⚖️ simule jour par jour les revenus, dépenses et prélèvements à venir (jusqu'à fin de mois, 3, 6 ou 12 mois) et indique la somme à ajouter pour ne jamais passer sous une marge choisie, avec la date limite et un versement régulier équivalent.
+- **Équilibre du compte** : l'outil ⚖️ simule jour par jour les revenus, dépenses et prélèvements à venir (jusqu'à fin de mois, 3, 6, 12 mois, 2, 3 ou 5 ans) et indique la somme à ajouter pour ne jamais passer sous une marge choisie, avec la date limite et un versement régulier équivalent.
 
 ## Améliorations d'efficacité
 
