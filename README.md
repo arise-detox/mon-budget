@@ -61,6 +61,10 @@ Dans le dépôt : **Settings → Pages → Source : GitHub Actions**.
 - **Copie de sécurité** : à la première ouverture de cette version, vos données sont copiées telles quelles (clé `budget-app-v1-avant-maj`) ; le bouton « Copie d'avant la mise à jour » les exporte. Le format de stockage n'a pas changé : vos données existantes sont conservées, seules des échéances futures sont ajoutées aux récurrents.
 - Raccourcis ← / → pour changer de mois.
 
+## Devises (version 1.3)
+
+Le budget reste **en euros**. Pour une dépense ou un revenu dans une autre monnaie (voyage, achat en ligne…), choisissez la **devise** sous le montant (USD, GBP, THB… ou n'importe quel code à 3 lettres), saisissez le montant dans cette devise et le **taux** (« 1 € = ? devise ») : la ligne est convertie en euros, et la ligne affiche le montant d'origine et le taux. Le dernier taux de chaque devise est mémorisé. Modifier une ligne (✎) permet de corriger le montant d'origine ou le taux ; l'export CSV ajoute le montant et la devise d'origine. Les lignes existantes, toutes en euros, ne changent pas.
+
 ## Tests
 
 ```bash
